@@ -8,7 +8,8 @@
     "build": "turbo run build",
     "lint": "turbo run lint",
     "desktop": "pnpm --filter @haloai/desktop dev",
-    "web": "pnpm --filter @haloai/web dev"
+    "web": "pnpm --filter @haloai/web dev",
+    "server": "pnpm --filter @haloai/server dev"
   },
   "devDependencies": {
     "turbo": "^2.0.0",

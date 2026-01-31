@@ -1,12 +1,15 @@
+
 import { useState, useEffect, useRef } from 'react';
 import { useAI, useVoiceInput, useVision, useAuth, useWallet } from './hooks';
 import SettingsModal from './components/SettingsModal';
 import WalletPanel from './components/WalletPanel';
 import { MessageBubble } from './components/MessageBubble';
 
+import type { TransactionData } from './components/TransactionCard';
+
 interface Message {
     role: 'user' | 'assistant';
-    content: string;
+    content: string | TransactionData;
 }
 
 export default function App() {
@@ -24,9 +27,15 @@ export default function App() {
     const inputRef = useRef<HTMLTextAreaElement>(null);
     const messagesEndRef = useRef<HTMLDivElement>(null);
 
+    const [pendingTransaction, setPendingTransaction] = useState<{
+        to: string;
+        amount: string;
+        asset: string;
+    } | null>(null);
+
     const { chat, isLoading } = useAI();
     const { authenticated } = useAuth();
-    const { address } = useWallet();
+    const { address, send, sendState, resetSendState } = useWallet();
     const { analyzeScreenshot, isAnalyzing } = useVision();
     const { isRecording, transcript, toggleRecording } = useVoiceInput({
         onTranscript: (text, isFinal) => {
@@ -174,7 +183,7 @@ export default function App() {
         try {
             const allMessages = [...messages, userMessage].map((m) => ({
                 role: m.role as 'user' | 'assistant',
-                content: m.content,
+                content: typeof m.content === 'string' ? m.content : JSON.stringify(m.content),
             }));
 
             const response = await chat(
@@ -184,6 +193,36 @@ export default function App() {
                 },
                 currentVisionContext || undefined
             );
+
+            // Check for transfer intent
+            const cleanResponse = response.trim();
+            let transferDetails = null;
+
+            // Try detecting JSON inside code block
+            const jsonMatch = cleanResponse.match(/```json\s*([\s\S]*?)\s*```/);
+            
+            // Try detecting raw JSON (starting with { or "json {")
+            const rawJsonMatch = cleanResponse.match(/^(?:json\s*)?(\{[\s\S]*\})/i);
+
+            try {
+                if (jsonMatch) {
+                    transferDetails = JSON.parse(jsonMatch[1]);
+                } else if (rawJsonMatch) {
+                    transferDetails = JSON.parse(rawJsonMatch[1]);
+                }
+
+                if (transferDetails && transferDetails.type === 'transfer') {
+                    setPendingTransaction(transferDetails);
+                    setMessages((prev) => [
+                        ...prev,
+                        { role: 'assistant', content: 'Please confirm the transaction details.' }
+                    ]);
+                    setStreamingContent('');
+                    return;
+                }
+            } catch (e) {
+                console.error('Failed to parse transfer JSON', e);
+            }
 
             setMessages((prev) => [
                 ...prev,
@@ -201,6 +240,44 @@ export default function App() {
             setStreamingContent('');
         }
     };
+
+    const handleConfirmTransaction = async () => {
+        if (!pendingTransaction) return;
+        
+        try {
+            await send(pendingTransaction.to, pendingTransaction.amount);
+            // Don't null pendingTransaction here yet, we need it for the success effect
+        } catch (e) {
+            console.error(e);
+        }
+    };
+
+    // Effect to handle sendState success
+    // Effect to handle sendState success
+    useEffect(() => {
+        if (sendState.status === 'success' && sendState.txHash) {
+            const explorerLink = `https://stellar.expert/explorer/testnet/tx/${sendState.txHash}`;
+            setMessages(prev => [
+                ...prev, 
+                { 
+                    role: 'assistant', 
+                    content: `✅ **Transaction Sent Successfully!**\n\nSent **${pendingTransaction?.amount} XLM** to \`${pendingTransaction?.to.slice(0, 6)}...${pendingTransaction?.to.slice(-6)}\`\n\n[View on Stellar Explorer](${explorerLink})` 
+                }
+            ]);
+            setPendingTransaction(null);
+            resetSendState();
+        } else if (sendState.status === 'error') {
+            setMessages(prev => [
+                ...prev, 
+                { 
+                    role: 'assistant', 
+                    content: `❌ **Transaction Failed**: ${sendState.error}` 
+                }
+            ]);
+            setPendingTransaction(null);
+            resetSendState();
+        }
+    }, [sendState, resetSendState]);
 
     const handleKeyDown = (e: React.KeyboardEvent) => {
         if (e.key === 'Enter' && !e.shiftKey) {
@@ -510,6 +587,52 @@ export default function App() {
                 isOpen={isWalletOpen}
                 onClose={() => setIsWalletOpen(false)}
             />
+
+            {/* Transaction Confirmation Modal */}
+            {pendingTransaction && (
+                <div className="fixed inset-0 z-[1000000] flex items-center justify-center bg-black/60 backdrop-blur-sm animate-fade-in">
+                    <div className="bg-[#1A1A1A] border border-white/10 rounded-xl p-6 w-[400px] shadow-2xl animate-scale-in">
+                        <h3 className="text-lg font-medium text-white mb-4">Confirm Transaction</h3>
+                        
+                        <div className="space-y-4 mb-6">
+                            <div className="bg-white/5 rounded-lg p-3">
+                                <label className="text-xs text-white/40 block mb-1">To</label>
+                                <p className="text-sm font-mono text-white/90 break-all">{pendingTransaction.to}</p>
+                            </div>
+                            
+                            <div className="flex gap-4">
+                                <div className="bg-white/5 rounded-lg p-3 flex-1">
+                                    <label className="text-xs text-white/40 block mb-1">Amount</label>
+                                    <p className="text-lg font-medium text-white">{pendingTransaction.amount} XLM</p>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div className="flex gap-3">
+                            <button 
+                                onClick={() => setPendingTransaction(null)}
+                                className="flex-1 px-4 py-2 rounded-lg bg-white/5 hover:bg-white/10 text-white/60 hover:text-white transition-colors text-sm"
+                            >
+                                Cancel
+                            </button>
+                            <button 
+                                onClick={handleConfirmTransaction}
+                                disabled={sendState.status === 'loading'}
+                                className="flex-1 px-4 py-2 rounded-lg bg-emerald-500 hover:bg-emerald-400 text-white font-medium transition-colors text-sm flex items-center justify-center gap-2"
+                            >
+                                {sendState.status === 'loading' ? (
+                                    <>
+                                        <div className="w-3 h-3 border-2 border-white/20 border-t-white rounded-full animate-spin" />
+                                        <span>Sending...</span>
+                                    </>
+                                ) : (
+                                    'Confirm Send'
+                                )}
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
         </div>
     );
 }

@@ -148,7 +148,7 @@ export function buildUserMessage(text: string, screenshot?: string): Message {
 function detectContextType(
     messages: Message[],
     hasScreenshot: boolean
-): 'coding' | 'writing' | 'email' | 'general' {
+): 'coding' | 'writing' | 'email' | 'transfer' | 'general' {
     const lastMessage = messages[messages.length - 1];
     const lastMessageText = typeof lastMessage?.content === 'string' 
         ? lastMessage.content.toLowerCase() 
@@ -175,6 +175,11 @@ function detectContextType(
         'document', 'paragraph', 'essay', 'article', 'content', 'tone'
     ];
 
+    // Check for transfer context
+    if (['send', 'pay', 'transfer', 'xlm'].some(keyword => combinedText.includes(keyword))) {
+        return 'transfer';
+    }
+
     // Check for coding context
     if (codingKeywords.some(keyword => combinedText.includes(keyword)) ||
         hasScreenshot) {
@@ -196,7 +201,7 @@ function detectContextType(
 
 // Get contextual system prompt based on detected context
 function getContextualSystemPrompt(
-    contextType: 'coding' | 'writing' | 'email' | 'general',
+    contextType: 'coding' | 'writing' | 'email' | 'transfer' | 'general',
     visionContext?: string
 ): string {
     const basePrompt = 'You are HaloAI, an intelligent desktop assistant powered by Cerebras GLM 4.7.';
@@ -209,6 +214,31 @@ function getContextualSystemPrompt(
     const formattingRules = `\n\n📋 OUTPUT FORMATTING (MANDATORY):\n- Use clear headings (##)\n- Use bullet points for lists\n- Code MUST be in fenced blocks: \`\`\`language\n- Code blocks must be ONE-CLICK copyable (no commentary inside)\n- Keep paragraphs short (2-3 sentences max)\n- Use bold for emphasis\n- NEVER mix code and explanation in the same block`;
 
     switch (contextType) {
+        case 'transfer':
+            return `${basePrompt}
+            
+**CONTEXT**: User wants to send tokens (XLM).
+
+**YOUR ROLE**:
+✅ Extract payment details
+✅ Output ONLY structured JSON
+❌ Do NOT include any conversational text
+
+**OUTPUT FORMAT**:
+\`\`\`json
+{
+    "type": "transfer",
+    "to": "destination_address_here",
+    "amount": "amount_number_as_string",
+    "asset": "XLM"
+}
+\`\`\`
+
+**RULES**:
+1. If the address is missing, ask for it in plain text (NOT JSON).
+2. If the amount is missing, ask for it in plain text (NOT JSON).
+3. If both key details are present, output ONLY the JSON block.`;
+
         case 'coding':
             return `${basePrompt}${visionSection}${formattingRules}
 

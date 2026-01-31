@@ -1,8 +1,11 @@
 import ReactMarkdown from 'react-markdown';
 import { useState } from 'react';
 
+import { TransactionCard } from './TransactionCard';
+import type { TransactionData } from './TransactionCard';
+
 interface MessageBubbleProps {
-    content: string;
+    content: string | TransactionData;
     role: 'user' | 'assistant';
     isStreaming?: boolean;
 }
@@ -56,10 +59,20 @@ export function MessageBubble({ content, role, isStreaming = false }: MessageBub
                         : 'bg-gradient-to-br from-slate-800/90 to-slate-900/90 text-slate-100 backdrop-blur-sm border border-slate-700/50 shadow-xl'
                 }`}
             >
-                {isUser ? (
+
+                {/* User Message */}
+                {isUser && typeof content === 'string' && (
                     <p className="text-sm leading-relaxed whitespace-pre-wrap">{content}</p>
-                ) : (
-                    <div className="prose prose-invert prose-sm max-w-none markdown-content">
+                )}
+
+                {/* Assistant: Transaction Card */}
+                {!isUser && typeof content !== 'string' && (
+                    <TransactionCard data={content} />
+                )}
+
+                {/* Assistant: Text Response */}
+                {!isUser && typeof content === 'string' && (
+                    <div className="prose prose-invert prose-sm max-w-none markdown-content max-h-[600px] overflow-y-auto pr-2 custom-scrollbar">
                         <ReactMarkdown
                             components={{
                                 // Paragraphs

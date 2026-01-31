@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { useAuth } from './useAuth';
-import { createWallet, getWallet, sendXLM, getTransactions, checkTrustline, addTrustline, getSwapQuote, executeSwap } from '../services/walletApi';
+import { createWallet, getWallet, sendXLM, getTransactions, checkTrustline, addTrustline, getSwapQuote, executeSwap, getVaultBalance, vaultDeposit, vaultWithdraw, vaultLock } from '../services/walletApi';
 import type { Transaction } from '../services/walletApi';
 
 interface SendState {
@@ -14,6 +14,13 @@ interface TradeState {
     quote?: string;
     txHash?: string;
     error?: string;
+}
+
+interface VaultState {
+    status: 'idle' | 'loading' | 'success' | 'error';
+    txHash?: string;
+    error?: string;
+    lockId?: number | null;
 }
 
 export function useWallet() {
@@ -210,6 +217,75 @@ export function useWallet() {
         setTradeState({ status: 'idle' });
     }, []);
 
+    // --- Vault state ---
+    const [vaultBalance, setVaultBalance] = useState<string | null>(null);
+    const [vaultLoading, setVaultLoading] = useState(false);
+    const [vaultState, setVaultState] = useState<VaultState>({ status: 'idle' });
+
+    const refreshVaultBalance = useCallback(async () => {
+        if (!userId) return;
+        setVaultLoading(true);
+        try {
+            const result = await getVaultBalance(userId);
+            if (mountedRef.current) setVaultBalance(result.balance);
+        } catch (err: any) {
+            if (mountedRef.current) {
+                console.error('[useWallet] vault balance error:', err);
+                setVaultBalance('0');
+            }
+        } finally {
+            if (mountedRef.current) setVaultLoading(false);
+        }
+    }, [userId]);
+
+    const depositToVault = useCallback(async (amount: string) => {
+        if (!userId) return;
+        setVaultState({ status: 'loading' });
+        try {
+            const result = await vaultDeposit(userId, amount);
+            if (!mountedRef.current) return;
+            setBalance(result.balance);
+            setVaultState({ status: 'success' });
+            refreshVaultBalance();
+        } catch (err: any) {
+            if (!mountedRef.current) return;
+            setVaultState({ status: 'error', error: err.message || 'Deposit failed' });
+        }
+    }, [userId, refreshVaultBalance]);
+
+    const withdrawFromVault = useCallback(async (amount: string) => {
+        if (!userId) return;
+        setVaultState({ status: 'loading' });
+        try {
+            const result = await vaultWithdraw(userId, amount);
+            if (!mountedRef.current) return;
+            setBalance(result.balance);
+            setVaultState({ status: 'success' });
+            refreshVaultBalance();
+        } catch (err: any) {
+            if (!mountedRef.current) return;
+            setVaultState({ status: 'error', error: err.message || 'Withdraw failed' });
+        }
+    }, [userId, refreshVaultBalance]);
+
+    const lockInVault = useCallback(async (amount: string, expiresAtLedger: number) => {
+        if (!userId) return;
+        setVaultState({ status: 'loading' });
+        try {
+            const result = await vaultLock(userId, amount, expiresAtLedger);
+            if (!mountedRef.current) return;
+            setVaultState({ status: 'success', lockId: result.lockId });
+            refreshVaultBalance();
+        } catch (err: any) {
+            if (!mountedRef.current) return;
+            setVaultState({ status: 'error', error: err.message || 'Lock failed' });
+        }
+    }, [userId, refreshVaultBalance]);
+
+    const resetVaultState = useCallback(() => {
+        setVaultState({ status: 'idle' });
+    }, []);
+
     return {
         address,
         balance,
@@ -231,5 +307,14 @@ export function useWallet() {
         fetchQuote,
         swap,
         resetTradeState,
+        // Vault
+        vaultBalance,
+        vaultLoading,
+        vaultState,
+        refreshVaultBalance,
+        depositToVault,
+        withdrawFromVault,
+        lockInVault,
+        resetVaultState,
     };
 }

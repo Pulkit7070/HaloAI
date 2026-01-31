@@ -53,6 +53,12 @@ const horizon = new StellarSdk.Horizon.Server(HORIZON_URL);
 const USDC_ISSUER = 'GBBD47IF6LWK7P7MDEVSCWR7DPUWV3NY3DTQEVFL4NAT4AQH3ZLLFLA5';
 const USDC_ASSET = new StellarSdk.Asset('USDC', USDC_ISSUER);
 
+// --- Soroban / Escrow Vault ---
+const SOROBAN_RPC_URL = 'https://soroban-testnet.stellar.org';
+const sorobanServer = new StellarSdk.rpc.Server(SOROBAN_RPC_URL);
+const VAULT_CONTRACT_ID = 'CANZIG67XFUHEUQCRJ4ZF2BG2OPCJMWJWBQTO37MVULQFQMDTKAOACQO';
+const XLM_SAC_ID = 'CDLZFC3SYJYDZT7K67VZ75HPJVIEUVNIXF47ZG2FB2RMQQVU2HHGCYSC';
+
 // POST /api/wallets — create or return existing wallet
 router.post('/', async (req: Request, res: Response) => {
     try {
@@ -413,6 +419,342 @@ router.post('/:userId/swap', async (req: Request, res: Response) => {
             ? JSON.stringify(err.response.data.extras.result_codes)
             : 'Failed to execute swap';
         return res.status(500).json({ error: msg });
+    }
+});
+
+// ─── Soroban helpers ─────────────────────────────────────────────────────────
+
+function addressScVal(addr: string): StellarSdk.xdr.ScVal {
+    return new StellarSdk.Address(addr).toScVal();
+}
+
+function nativeI128(amount: bigint): StellarSdk.xdr.ScVal {
+    return StellarSdk.nativeToScVal(amount, { type: 'i128' });
+}
+
+function nativeU64(val: number): StellarSdk.xdr.ScVal {
+    return StellarSdk.nativeToScVal(val, { type: 'u64' });
+}
+
+async function buildAndSubmitSoroban(
+    publicKey: string,
+    secretKey: string,
+    method: string,
+    args: StellarSdk.xdr.ScVal[],
+): Promise<StellarSdk.rpc.Api.GetTransactionResponse> {
+    const sourceAccount = await sorobanServer.getAccount(publicKey);
+    const contract = new StellarSdk.Contract(VAULT_CONTRACT_ID);
+
+    const tx = new StellarSdk.TransactionBuilder(sourceAccount, {
+        fee: '300000',
+        networkPassphrase: StellarSdk.Networks.TESTNET,
+    })
+        .addOperation(contract.call(method, ...args))
+        .setTimeout(60)
+        .build();
+
+    const simulated = await sorobanServer.simulateTransaction(tx);
+
+    // Log simulation result for debugging
+    console.log(`[Soroban] Simulate ${method}: error=${StellarSdk.rpc.Api.isSimulationError(simulated)}, restore=${StellarSdk.rpc.Api.isSimulationRestore(simulated)}, success=${StellarSdk.rpc.Api.isSimulationSuccess(simulated)}`);
+
+    if (StellarSdk.rpc.Api.isSimulationError(simulated)) {
+        const errDetail = (simulated as any).error || JSON.stringify(simulated.events || []);
+        console.error('[Soroban] Simulation error for', method, ':', errDetail);
+        // Try to extract contract error code from events
+        const errMsg = errDetail.includes('Error(Contract')
+            ? `Contract error: ${errDetail}`
+            : `Simulation failed: ${errDetail}`;
+        throw new Error(errMsg);
+    }
+
+    // Handle restore case (expired contract state needs TTL extension)
+    if (StellarSdk.rpc.Api.isSimulationRestore(simulated)) {
+        console.log('[Soroban] Restoring expired contract state...');
+        const restoreTx = StellarSdk.rpc.assembleTransaction(tx, simulated).build();
+        const keypair = StellarSdk.Keypair.fromSecret(secretKey);
+        restoreTx.sign(keypair);
+        const restoreRes = await sorobanServer.sendTransaction(restoreTx);
+        if (restoreRes.status === 'ERROR') {
+            throw new Error(`Restore failed: ${restoreRes.errorResult?.toXDR('base64')}`);
+        }
+        let restoreResult = await sorobanServer.getTransaction(restoreRes.hash);
+        while (restoreResult.status === 'NOT_FOUND') {
+            await new Promise(r => setTimeout(r, 1000));
+            restoreResult = await sorobanServer.getTransaction(restoreRes.hash);
+        }
+        if (restoreResult.status === 'FAILED') {
+            throw new Error('Restore transaction failed');
+        }
+        // Retry the original call after restore
+        return buildAndSubmitSoroban(publicKey, secretKey, method, args);
+    }
+
+    // Check for contract errors in simulation events before assembling
+    // (simulation can "succeed" but the contract returned an Err() that crashes assembleTransaction)
+    const simEvents = (simulated as any).events || [];
+    for (const evt of simEvents) {
+        if (typeof evt === 'string' && evt.includes('Error(Contract')) {
+            const errorMap: Record<string, string> = {
+                '1': 'AlreadyInitialized', '2': 'NotInitialized', '3': 'NotOwner',
+                '4': 'InsufficientFunds', '5': 'InvalidAmount', '6': 'LockNotFound',
+                '7': 'LockNotActive', '8': 'LockExpired', '9': 'LockNotExpired', '10': 'InvalidExpiry',
+            };
+            const codeMatch = evt.match(/#(\d+)/);
+            const code = codeMatch?.[1] || 'unknown';
+            const errName = errorMap[code] || `error code ${code}`;
+            throw new Error(`Vault error: ${errName}`);
+        }
+    }
+
+    let assembled;
+    try {
+        assembled = StellarSdk.rpc.assembleTransaction(tx, simulated).build();
+    } catch (assembleErr: any) {
+        // "Bad union switch: N" means the contract returned an error during simulation
+        if (assembleErr.message?.includes('union switch')) {
+            const switchVal = assembleErr.message.match(/switch: (\d+)/)?.[1];
+            const errorMap: Record<string, string> = {
+                '1': 'AlreadyInitialized', '2': 'NotInitialized', '3': 'NotOwner',
+                '4': 'InsufficientFunds', '5': 'InvalidAmount', '6': 'LockNotFound',
+                '7': 'LockNotActive', '8': 'LockExpired', '9': 'LockNotExpired', '10': 'InvalidExpiry',
+            };
+            const errName = switchVal && errorMap[switchVal] ? errorMap[switchVal] : `error code ${switchVal}`;
+            throw new Error(`Vault error: ${errName}`);
+        }
+        throw assembleErr;
+    }
+    const keypair = StellarSdk.Keypair.fromSecret(secretKey);
+    assembled.sign(keypair);
+
+    const response = await sorobanServer.sendTransaction(assembled);
+    if (response.status === 'ERROR') {
+        throw new Error(`Submit failed: ${response.errorResult?.toXDR('base64')}`);
+    }
+
+    let result = await sorobanServer.getTransaction(response.hash);
+    while (result.status === 'NOT_FOUND') {
+        await new Promise(r => setTimeout(r, 1000));
+        result = await sorobanServer.getTransaction(response.hash);
+    }
+    if (result.status === 'FAILED') {
+        throw new Error('Transaction failed on-chain');
+    }
+    return result;
+}
+
+async function simulateReadOnly(
+    publicKey: string,
+    method: string,
+    args: StellarSdk.xdr.ScVal[],
+): Promise<StellarSdk.xdr.ScVal | null> {
+    const sourceAccount = await sorobanServer.getAccount(publicKey);
+    const contract = new StellarSdk.Contract(VAULT_CONTRACT_ID);
+
+    const tx = new StellarSdk.TransactionBuilder(sourceAccount, {
+        fee: '100',
+        networkPassphrase: StellarSdk.Networks.TESTNET,
+    })
+        .addOperation(contract.call(method, ...args))
+        .setTimeout(30)
+        .build();
+
+    const simulated = await sorobanServer.simulateTransaction(tx);
+    if (StellarSdk.rpc.Api.isSimulationError(simulated)) {
+        throw new Error(`Query failed: ${simulated.error}`);
+    }
+    if (StellarSdk.rpc.Api.isSimulationSuccess(simulated) && simulated.result) {
+        return simulated.result.retval;
+    }
+    return null;
+}
+
+async function getWalletRecord(userId: string) {
+    const { data: wallet } = await supabase
+        .from('wallets')
+        .select('*')
+        .eq('privy_user_id', userId)
+        .limit(1)
+        .maybeSingle();
+    return wallet;
+}
+
+// ─── Vault endpoints ─────────────────────────────────────────────────────────
+
+// GET /api/wallets/:userId/vault/balance
+router.get('/:userId/vault/balance', async (req: Request, res: Response) => {
+    try {
+        const wallet = await getWalletRecord(req.params.userId);
+        if (!wallet) return res.status(404).json({ error: 'Wallet not found' });
+
+        const retval = await simulateReadOnly(wallet.public_key, 'balance', [
+            addressScVal(wallet.public_key),
+            addressScVal(XLM_SAC_ID),
+        ]);
+        const stroops = retval ? BigInt(StellarSdk.scValToNative(retval)) : 0n;
+        // Convert stroops to XLM (7 decimal places)
+        const xlm = Number(stroops) / 1e7;
+        return res.json({ balance: xlm.toFixed(7) });
+    } catch (err: any) {
+        console.error('[Vault] Balance error:', err.message);
+        return res.status(500).json({ error: 'Failed to fetch vault balance' });
+    }
+});
+
+// POST /api/wallets/:userId/vault/deposit
+router.post('/:userId/vault/deposit', async (req: Request, res: Response) => {
+    try {
+        const { amount } = req.body;
+        if (!amount || isNaN(Number(amount)) || Number(amount) <= 0) {
+            return res.status(400).json({ error: 'Valid amount (in XLM) is required' });
+        }
+        const wallet = await getWalletRecord(req.params.userId);
+        if (!wallet) return res.status(404).json({ error: 'Wallet not found' });
+
+        const secretKey = decrypt(wallet.encrypted_secret);
+        const stroops = BigInt(Math.round(Number(amount) * 1e7));
+
+        await buildAndSubmitSoroban(wallet.public_key, secretKey, 'deposit', [
+            addressScVal(wallet.public_key),
+            addressScVal(XLM_SAC_ID),
+            nativeI128(stroops),
+        ]);
+
+        const balance = await getBalance(wallet.public_key);
+        return res.json({ txHash: 'ok', balance });
+    } catch (err: any) {
+        console.error('[Vault] Deposit error:', err.message);
+        return res.status(500).json({ error: err.message || 'Failed to deposit into vault' });
+    }
+});
+
+// POST /api/wallets/:userId/vault/withdraw
+router.post('/:userId/vault/withdraw', async (req: Request, res: Response) => {
+    try {
+        const { amount } = req.body;
+        if (!amount || isNaN(Number(amount)) || Number(amount) <= 0) {
+            return res.status(400).json({ error: 'Valid amount (in XLM) is required' });
+        }
+        const wallet = await getWalletRecord(req.params.userId);
+        if (!wallet) return res.status(404).json({ error: 'Wallet not found' });
+
+        const secretKey = decrypt(wallet.encrypted_secret);
+        const stroops = BigInt(Math.round(Number(amount) * 1e7));
+
+        await buildAndSubmitSoroban(wallet.public_key, secretKey, 'withdraw', [
+            addressScVal(wallet.public_key),
+            addressScVal(XLM_SAC_ID),
+            nativeI128(stroops),
+        ]);
+
+        const balance = await getBalance(wallet.public_key);
+        return res.json({ txHash: 'ok', balance });
+    } catch (err: any) {
+        console.error('[Vault] Withdraw error:', err.message);
+        return res.status(500).json({ error: err.message || 'Failed to withdraw from vault' });
+    }
+});
+
+// POST /api/wallets/:userId/vault/lock
+router.post('/:userId/vault/lock', async (req: Request, res: Response) => {
+    try {
+        const { amount, expiresAtLedger } = req.body;
+        if (!amount || !expiresAtLedger) {
+            return res.status(400).json({ error: 'amount and expiresAtLedger are required' });
+        }
+        const wallet = await getWalletRecord(req.params.userId);
+        if (!wallet) return res.status(404).json({ error: 'Wallet not found' });
+
+        const secretKey = decrypt(wallet.encrypted_secret);
+        const stroops = BigInt(Math.round(Number(amount) * 1e7));
+
+        const result = await buildAndSubmitSoroban(wallet.public_key, secretKey, 'lock', [
+            addressScVal(wallet.public_key),
+            addressScVal(XLM_SAC_ID),
+            nativeI128(stroops),
+            nativeU64(Number(expiresAtLedger)),
+        ]);
+
+        let lockId: number | null = null;
+        if (result.status === 'SUCCESS' && result.returnValue) {
+            lockId = Number(StellarSdk.scValToNative(result.returnValue));
+        }
+        return res.json({ txHash: 'ok', lockId });
+    } catch (err: any) {
+        console.error('[Vault] Lock error:', err.message);
+        return res.status(500).json({ error: err.message || 'Failed to lock funds' });
+    }
+});
+
+// GET /api/wallets/:userId/vault/lock/:lockId
+router.get('/:userId/vault/lock/:lockId', async (req: Request, res: Response) => {
+    try {
+        const wallet = await getWalletRecord(req.params.userId);
+        if (!wallet) return res.status(404).json({ error: 'Wallet not found' });
+
+        const retval = await simulateReadOnly(wallet.public_key, 'get_lock', [
+            addressScVal(wallet.public_key),
+            nativeU64(Number(req.params.lockId)),
+        ]);
+        if (!retval) return res.status(404).json({ error: 'Lock not found' });
+
+        const raw = StellarSdk.scValToNative(retval);
+        return res.json({
+            token: raw.token,
+            amount: (Number(BigInt(raw.amount)) / 1e7).toFixed(7),
+            expiresAt: Number(raw.expires_at),
+            status: raw.status,
+        });
+    } catch (err: any) {
+        console.error('[Vault] Get lock error:', err.message);
+        return res.status(500).json({ error: 'Failed to fetch lock' });
+    }
+});
+
+// POST /api/wallets/:userId/vault/release
+router.post('/:userId/vault/release', async (req: Request, res: Response) => {
+    try {
+        const { lockId, recipient } = req.body;
+        if (lockId === undefined || !recipient) {
+            return res.status(400).json({ error: 'lockId and recipient are required' });
+        }
+        const wallet = await getWalletRecord(req.params.userId);
+        if (!wallet) return res.status(404).json({ error: 'Wallet not found' });
+
+        const secretKey = decrypt(wallet.encrypted_secret);
+        await buildAndSubmitSoroban(wallet.public_key, secretKey, 'release', [
+            addressScVal(wallet.public_key),
+            nativeU64(Number(lockId)),
+            addressScVal(recipient),
+        ]);
+
+        return res.json({ txHash: 'ok' });
+    } catch (err: any) {
+        console.error('[Vault] Release error:', err.message);
+        return res.status(500).json({ error: err.message || 'Failed to release lock' });
+    }
+});
+
+// POST /api/wallets/:userId/vault/reclaim
+router.post('/:userId/vault/reclaim', async (req: Request, res: Response) => {
+    try {
+        const { lockId } = req.body;
+        if (lockId === undefined) {
+            return res.status(400).json({ error: 'lockId is required' });
+        }
+        const wallet = await getWalletRecord(req.params.userId);
+        if (!wallet) return res.status(404).json({ error: 'Wallet not found' });
+
+        const secretKey = decrypt(wallet.encrypted_secret);
+        await buildAndSubmitSoroban(wallet.public_key, secretKey, 'reclaim', [
+            addressScVal(wallet.public_key),
+            nativeU64(Number(lockId)),
+        ]);
+
+        return res.json({ txHash: 'ok' });
+    } catch (err: any) {
+        console.error('[Vault] Reclaim error:', err.message);
+        return res.status(500).json({ error: err.message || 'Failed to reclaim lock' });
     }
 });
 

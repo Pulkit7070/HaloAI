@@ -168,6 +168,90 @@ export async function executeSwap(
     return res.json();
 }
 
+// ─── Vault API ───────────────────────────────────────────────────────────────
+
+export async function getVaultBalance(userId: string): Promise<{ balance: string }> {
+    const res = await safeFetch(`${WALLETS_URL}/${userId}/vault/balance`);
+    if (!res.ok) throw new Error(await parseErrorBody(res));
+    return res.json();
+}
+
+export async function vaultDeposit(
+    userId: string,
+    amount: string,
+): Promise<{ txHash: string; balance: string }> {
+    const res = await safeFetch(`${WALLETS_URL}/${userId}/vault/deposit`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ amount }),
+    });
+    if (!res.ok) throw new Error(await parseErrorBody(res));
+    return res.json();
+}
+
+export async function vaultWithdraw(
+    userId: string,
+    amount: string,
+): Promise<{ txHash: string; balance: string }> {
+    const res = await safeFetch(`${WALLETS_URL}/${userId}/vault/withdraw`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ amount }),
+    });
+    if (!res.ok) throw new Error(await parseErrorBody(res));
+    return res.json();
+}
+
+export async function vaultLock(
+    userId: string,
+    amount: string,
+    expiresAtLedger: number,
+): Promise<{ txHash: string; lockId: number | null }> {
+    const res = await safeFetch(`${WALLETS_URL}/${userId}/vault/lock`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ amount, expiresAtLedger }),
+    });
+    if (!res.ok) throw new Error(await parseErrorBody(res));
+    return res.json();
+}
+
+export async function vaultGetLock(
+    userId: string,
+    lockId: number,
+): Promise<{ token: string; amount: string; expiresAt: number; status: string }> {
+    const res = await safeFetch(`${WALLETS_URL}/${userId}/vault/lock/${lockId}`);
+    if (!res.ok) throw new Error(await parseErrorBody(res));
+    return res.json();
+}
+
+export async function vaultRelease(
+    userId: string,
+    lockId: number,
+    recipient: string,
+): Promise<{ txHash: string }> {
+    const res = await safeFetch(`${WALLETS_URL}/${userId}/vault/release`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ lockId, recipient }),
+    });
+    if (!res.ok) throw new Error(await parseErrorBody(res));
+    return res.json();
+}
+
+export async function vaultReclaim(
+    userId: string,
+    lockId: number,
+): Promise<{ txHash: string }> {
+    const res = await safeFetch(`${WALLETS_URL}/${userId}/vault/reclaim`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ lockId }),
+    });
+    if (!res.ok) throw new Error(await parseErrorBody(res));
+    return res.json();
+}
+
 export async function getHorizonAccount(address: string) {
     const res = await fetch(`https://horizon-testnet.stellar.org/accounts/${address}`);
     if (!res.ok) throw new Error('Failed to fetch account from Horizon');

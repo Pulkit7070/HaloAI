@@ -5,6 +5,20 @@ interface SettingsModalProps {
     onClose: () => void;
 }
 
+const isMac = navigator.platform.toUpperCase().indexOf('MAC') >= 0;
+
+// Display keybinding with platform-correct labels
+function displayKeybinding(binding: string): string {
+    if (isMac) {
+        return binding
+            .replace(/Alt/g, '\u2325 Option')
+            .replace(/Command/g, '\u2318 Cmd')
+            .replace(/Ctrl/g, '\u2303 Ctrl')
+            .replace(/Shift/g, '\u21E7 Shift');
+    }
+    return binding;
+}
+
 export default function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
     const [currentKeybinding, setCurrentKeybinding] = useState('Alt+Space');
     const [newKeybinding, setNewKeybinding] = useState('');
@@ -36,11 +50,12 @@ export default function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
 
     const formatKeybinding = (e: KeyboardEvent): string => {
         const parts: string[] = [];
-        
+
+        // Use Electron accelerator format (Alt, not Option) for registration
         if (e.ctrlKey) parts.push('Ctrl');
         if (e.altKey) parts.push('Alt');
         if (e.shiftKey) parts.push('Shift');
-        if (e.metaKey) parts.push('Command');
+        if (e.metaKey) parts.push(isMac ? 'Command' : 'Super');
 
         // Get the actual key
         const key = e.key;
@@ -290,7 +305,7 @@ export default function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
                     <div className="flex items-center justify-between p-4 bg-white/[0.03] rounded-xl border border-white/[0.06]">
                         <span className="text-sm text-white/50 font-light">Current Shortcut</span>
                         <kbd className="px-3 py-1.5 bg-white/10 rounded-lg text-white font-medium text-sm tracking-wide border border-white/5 min-w-[80px] text-center">
-                            {currentKeybinding}
+                            {displayKeybinding(currentKeybinding)}
                         </kbd>
                     </div>
 
@@ -336,7 +351,7 @@ export default function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
                             <div className="flex items-center justify-between p-4 bg-white/[0.05] rounded-xl border border-white/10">
                                 <span className="text-sm text-white/50">New Shortcut</span>
                                 <kbd className="px-3 py-1.5 bg-white text-black rounded-lg font-medium text-sm tracking-wide shadow-sm">
-                                    {newKeybinding}
+                                    {displayKeybinding(newKeybinding)}
                                 </kbd>
                             </div>
                             {!error && (
@@ -421,7 +436,7 @@ export default function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
                             } as any}
                             type="button"
                         >
-                            Reset default (Alt+Space)
+                            Reset default ({isMac ? '\u2325 Option+Space' : 'Alt+Space'})
                         </button>
                     </div>
                 </div>

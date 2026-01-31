@@ -1,8 +1,7 @@
 import { Router, Request, Response } from 'express';
 import * as StellarSdk from '@stellar/stellar-sdk';
 import crypto from 'crypto';
-import Database from 'better-sqlite3';
-import path from 'path';
+import { createClient } from '@supabase/supabase-js';
 
 const router = Router();
 
@@ -34,25 +33,17 @@ function decrypt(data: string): string {
     return decrypted;
 }
 
-// --- SQLite setup ---
-const dbPath = path.join(process.cwd(), 'wallets.db');
-const db = new Database(dbPath);
+// --- Supabase setup ---
+const supabaseUrl = process.env.SUPABASE_URL;
+const supabaseKey = process.env.SUPABASE_SERVICE_KEY;
 
-db.exec(`
-    CREATE TABLE IF NOT EXISTS wallets (
-        privy_user_id TEXT PRIMARY KEY,
-        public_key TEXT NOT NULL,
-        encrypted_secret TEXT NOT NULL,
-        created_at TEXT DEFAULT (datetime('now'))
-    )
-`);
+if (!supabaseUrl || !supabaseKey) {
+    console.error('[Wallets] SUPABASE_URL and SUPABASE_SERVICE_KEY environment variables are required');
+    process.exit(1);
+}
 
-const stmtInsert = db.prepare(
-    'INSERT INTO wallets (privy_user_id, public_key, encrypted_secret) VALUES (?, ?, ?)'
-);
-const stmtGet = db.prepare('SELECT * FROM wallets WHERE privy_user_id = ?');
-
-console.log(`[Wallets] Database at ${dbPath}`);
+const supabase = createClient(supabaseUrl, supabaseKey);
+console.log(`[Wallets] Connected to Supabase at ${supabaseUrl}`);
 
 // --- Stellar ---
 const HORIZON_URL = 'https://horizon-testnet.stellar.org';
@@ -67,7 +58,12 @@ router.post('/', async (req: Request, res: Response) => {
         }
 
         // Return existing wallet if already created
-        const existing = stmtGet.get(privyUserId) as any;
+        const { data: existing } = await supabase
+            .from('wallets')
+            .select('*')
+            .eq('privy_user_id', privyUserId)
+            .maybeSingle();
+
         if (existing) {
             const balance = await getBalance(existing.public_key);
             return res.json({ address: existing.public_key, balance });
@@ -77,7 +73,18 @@ router.post('/', async (req: Request, res: Response) => {
         const pair = StellarSdk.Keypair.random();
         const encryptedSecret = encrypt(pair.secret());
 
-        stmtInsert.run(privyUserId, pair.publicKey(), encryptedSecret);
+        const { error: insertError } = await supabase
+            .from('wallets')
+            .insert({
+                privy_user_id: privyUserId,
+                public_key: pair.publicKey(),
+                encrypted_secret: encryptedSecret,
+            });
+
+        if (insertError) {
+            throw insertError;
+        }
+
         console.log(`[Wallets] Created wallet for ${privyUserId}: ${pair.publicKey()}`);
 
         // Fund on testnet via friendbot
@@ -99,7 +106,11 @@ router.post('/', async (req: Request, res: Response) => {
 router.get('/:userId', async (req: Request, res: Response) => {
     try {
         const { userId } = req.params;
-        const wallet = stmtGet.get(userId) as any;
+        const { data: wallet } = await supabase
+            .from('wallets')
+            .select('*')
+            .eq('privy_user_id', userId)
+            .maybeSingle();
 
         if (!wallet) {
             return res.status(404).json({ error: 'Wallet not found' });
@@ -123,7 +134,12 @@ router.post('/:userId/send', async (req: Request, res: Response) => {
             return res.status(400).json({ error: 'to and amount are required' });
         }
 
-        const wallet = stmtGet.get(userId) as any;
+        const { data: wallet } = await supabase
+            .from('wallets')
+            .select('*')
+            .eq('privy_user_id', userId)
+            .maybeSingle();
+
         if (!wallet) {
             return res.status(404).json({ error: 'Wallet not found' });
         }
@@ -161,7 +177,11 @@ router.post('/:userId/send', async (req: Request, res: Response) => {
 router.get('/:userId/transactions', async (req: Request, res: Response) => {
     try {
         const { userId } = req.params;
-        const wallet = stmtGet.get(userId) as any;
+        const { data: wallet } = await supabase
+            .from('wallets')
+            .select('*')
+            .eq('privy_user_id', userId)
+            .maybeSingle();
 
         if (!wallet) {
             return res.status(404).json({ error: 'Wallet not found' });

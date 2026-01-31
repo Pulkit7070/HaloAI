@@ -19,8 +19,10 @@ function displayKeybinding(binding: string): string {
     return binding;
 }
 
+const DEFAULT_KEYBINDING = isMac ? 'Command+Shift+Space' : 'Alt+Space';
+
 export default function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
-    const [currentKeybinding, setCurrentKeybinding] = useState('Alt+Space');
+    const [currentKeybinding, setCurrentKeybinding] = useState(DEFAULT_KEYBINDING);
     const [newKeybinding, setNewKeybinding] = useState('');
     const [isRecording, setIsRecording] = useState(false);
     const [error, setError] = useState('');
@@ -436,7 +438,7 @@ export default function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
                             } as any}
                             type="button"
                         >
-                            Reset default ({isMac ? '\u2325 Option+Space' : 'Alt+Space'})
+                            Reset default ({displayKeybinding(DEFAULT_KEYBINDING)})
                         </button>
                     </div>
                 </div>

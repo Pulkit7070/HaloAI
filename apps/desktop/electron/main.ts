@@ -6,10 +6,15 @@ import Store from 'electron-store';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
+// Platform-aware default shortcut
+// macOS: Option+Space conflicts with input source switching, use Cmd+Shift+Space
+// Windows/Linux: Alt+Space
+const DEFAULT_KEYBINDING = process.platform === 'darwin' ? 'Command+Shift+Space' : 'Alt+Space';
+
 // Settings store with schema
 const store = new Store({
     defaults: {
-        keybinding: 'Alt+Space'
+        keybinding: DEFAULT_KEYBINDING
     }
 });
 
@@ -165,7 +170,7 @@ function createTray() {
         },
     ]);
 
-    tray.setToolTip('HaloAI - Double-tap Option to activate');
+    tray.setToolTip(process.platform === 'darwin' ? 'HaloAI - Cmd+Shift+Space to activate' : 'HaloAI - Alt+Space to activate');
     tray.setContextMenu(contextMenu);
 
     tray.on('click', showWindow);
@@ -173,7 +178,7 @@ function createTray() {
 
 function registerHotkeys() {
     // Register the custom keybinding from store
-    const keybinding = store.get('keybinding', 'Alt+Space') as string;
+    const keybinding = store.get('keybinding', DEFAULT_KEYBINDING) as string;
     
     try {
         const success = globalShortcut.register(keybinding, () => {
@@ -203,7 +208,7 @@ function registerHotkeys() {
 
 function updateKeybinding(newKeybinding: string): boolean {
     // Get the old keybinding
-    const oldKeybinding = store.get('keybinding', 'Alt+Space') as string;
+    const oldKeybinding = store.get('keybinding', DEFAULT_KEYBINDING) as string;
     
     // Unregister the old one
     if (oldKeybinding) {
@@ -383,7 +388,7 @@ function setupIPC() {
 
     // Keybinding management
     ipcMain.handle('get-keybinding', () => {
-        return store.get('keybinding', 'Alt+Space');
+        return store.get('keybinding', DEFAULT_KEYBINDING);
     });
 
     ipcMain.handle('set-keybinding', (_event, keybinding: string) => {
@@ -391,9 +396,8 @@ function setupIPC() {
     });
 
     ipcMain.handle('reset-keybinding', () => {
-        const defaultKeybinding = 'Alt+Space';
-        const success = updateKeybinding(defaultKeybinding);
-        return success ? defaultKeybinding : store.get('keybinding');
+        const success = updateKeybinding(DEFAULT_KEYBINDING);
+        return success ? DEFAULT_KEYBINDING : store.get('keybinding');
     });
 }
 

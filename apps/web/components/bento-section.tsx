@@ -36,33 +36,33 @@ const BentoCard = ({ title, description, Component }) => (
 export function BentoSection() {
   const cards = [
     {
-      title: "Understand your work",
-      description: "It sees what you're working on and provides relevant help instantly.",
+      title: "Understands your Stellar activity",
+      description: "Sees your screen and executes Stellar smart contract actions instantly.",
       Component: AiCodeReviews,
     },
     {
-      title: "Find bugs instantly",
-      description: "Get solutions for code errors without leaving your IDE.",
+      title: "Fix contract issues instantly",
+      description: "Get solutions for Stellar and smart contract errors without leaving your IDE.",
       Component: RealtimeCodingPreviews,
     },
     {
-      title: "Write better emails",
-      description: "Draft perfect responses with context-aware suggestions.",
+      title: "Send smarter payments",
+      description: "Draft messages and execute Stellar actionswith full context from what’s on your screen.",
       Component: OneClickIntegrationsIllustration,
     },
     {
-      title: "Catch every typo",
-      description: "Fix grammar and spelling mistakes across any app.",
+      title: "Catch risky transactions",
+      description: "Prevent loss of funds with smart contract analysis.",
       Component: MCPConnectivityIllustration, // Updated component
     },
     {
-      title: "Explain complex text", // Swapped position
-      description: "Highlight any text to get a simple, clear explanation.",
+      title: "Explain on-chain activity", // Swapped position
+      description: "Highlight any wallet, token, or contract to get a simple, clear breakdown.",
       Component: ParallelCodingAgents, // Updated component
     },
     {
-      title: "Automated notes", // Swapped position
-      description: "Get summaries and action items from your meetings.",
+      title: "Automated crypto insights", // Swapped position
+      description: "Get summaries and smart suggestions from your Stellar activity.",
       Component: EasyDeployment,
     },
   ]
@@ -74,11 +74,10 @@ export function BentoSection() {
         <div className="self-stretch py-8 md:py-14 flex flex-col justify-center items-center gap-2 z-10">
           <div className="flex flex-col justify-start items-center gap-4">
             <h2 className="w-full max-w-[655px] text-center text-foreground text-4xl md:text-6xl font-semibold leading-tight md:leading-[66px]">
-              Empower Your Workflow with AI
+              Bridging Web2 Users to Web3 on Stellar
             </h2>
             <p className="w-full max-w-[600px] text-center text-muted-foreground text-lg md:text-xl font-medium leading-relaxed">
-              Ask your HaloAI for real-time collaboration, and actionable insights to
-              streamline your operations.
+              HaloAI is a cross-platform AI assistant that helps you work faster.
             </p>
           </div>
         </div>

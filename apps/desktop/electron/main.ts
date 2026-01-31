@@ -9,7 +9,7 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 // Platform-aware default shortcut
 // macOS: Option+Space conflicts with input source switching, use Cmd+Shift+Space
 // Windows/Linux: Alt+Space
-const DEFAULT_KEYBINDING = process.platform === 'darwin' ? 'Command+Shift+Space' : 'Alt+Space';
+const DEFAULT_KEYBINDING = process.platform === 'darwin' ? 'Command+Shift+Space' : 'Ctrl+Space';
 
 // Settings store with schema
 const store = new Store({
@@ -170,13 +170,19 @@ function createTray() {
         },
     ]);
 
-    tray.setToolTip(process.platform === 'darwin' ? 'HaloAI - Cmd+Shift+Space to activate' : 'HaloAI - Alt+Space to activate');
+    tray.setToolTip(process.platform === 'darwin' ? 'HaloAI - Cmd+Shift+Space to activate' : 'HaloAI - Ctrl+Space to activate');
     tray.setContextMenu(contextMenu);
 
     tray.on('click', showWindow);
 }
 
 function registerHotkeys() {
+    // Migrate old Alt+Space default (conflicts with Windows system menu)
+    const storedBinding = store.get('keybinding') as string;
+    if (storedBinding === 'Alt+Space' && process.platform !== 'darwin') {
+        store.set('keybinding', DEFAULT_KEYBINDING);
+    }
+
     // Register the custom keybinding from store
     const keybinding = store.get('keybinding', DEFAULT_KEYBINDING) as string;
     

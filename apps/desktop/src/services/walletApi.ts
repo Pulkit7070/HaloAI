@@ -47,3 +47,9 @@ export async function getTransactions(userId: string): Promise<Transaction[]> {
     const data = await res.json();
     return data.transactions;
 }
+
+export async function getHorizonAccount(address: string) {
+    const res = await fetch(`https://horizon-testnet.stellar.org/accounts/${address}`);
+    if (!res.ok) throw new Error('Failed to fetch account from Horizon');
+    return res.json();
+}

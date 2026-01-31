@@ -5,11 +5,13 @@ import SettingsModal from './components/SettingsModal';
 import WalletPanel from './components/WalletPanel';
 import { MessageBubble } from './components/MessageBubble';
 
+import { getHorizonAccount } from './services/walletApi';
 import type { TransactionData } from './components/TransactionCard';
+import type { PortfolioData } from './components/PortfolioCard';
 
 interface Message {
     role: 'user' | 'assistant';
-    content: string | TransactionData;
+    content: string | TransactionData | PortfolioData;
 }
 
 export default function App() {
@@ -196,7 +198,7 @@ export default function App() {
 
             // Check for transfer intent
             const cleanResponse = response.trim();
-            let transferDetails = null;
+
 
             // Try detecting JSON inside code block
             const jsonMatch = cleanResponse.match(/```json\s*([\s\S]*?)\s*```/);
@@ -205,23 +207,62 @@ export default function App() {
             const rawJsonMatch = cleanResponse.match(/^(?:json\s*)?(\{[\s\S]*\})/i);
 
             try {
+                let parsedDetails = null;
                 if (jsonMatch) {
-                    transferDetails = JSON.parse(jsonMatch[1]);
+                    parsedDetails = JSON.parse(jsonMatch[1]);
                 } else if (rawJsonMatch) {
-                    transferDetails = JSON.parse(rawJsonMatch[1]);
+                    parsedDetails = JSON.parse(rawJsonMatch[1]);
                 }
 
-                if (transferDetails && transferDetails.type === 'transfer') {
-                    setPendingTransaction(transferDetails);
-                    setMessages((prev) => [
-                        ...prev,
-                        { role: 'assistant', content: 'Please confirm the transaction details.' }
-                    ]);
-                    setStreamingContent('');
-                    return;
+                if (parsedDetails) {
+                    // Handle Transfer
+                    if (parsedDetails.type === 'transfer') {
+                        setPendingTransaction(parsedDetails);
+                        setMessages((prev) => [
+                            ...prev,
+                            { role: 'assistant', content: 'Please confirm the transaction details.' }
+                        ]);
+                        setStreamingContent('');
+                        return;
+                    }
+                    
+                    // Handle Balance/Portfolio
+                    if (parsedDetails.type === 'balance') {
+                         if (!address) {
+                             setMessages((prev) => [
+                                 ...prev,
+                                 { role: 'assistant', content: "Please connect your wallet first to view your portfolio." }
+                             ]);
+                             setStreamingContent('');
+                             return;
+                         }
+
+                         try {
+                             const accountData = await getHorizonAccount(address);
+                             const portfolioMessage: PortfolioData = {
+                                 type: 'portfolio',
+                                 address: address,
+                                 network: 'Testnet',
+                                 balances: accountData.balances
+                             };
+                             
+                             setMessages((prev) => [
+                                 ...prev,
+                                 { role: 'assistant', content: portfolioMessage }
+                             ]);
+                         } catch (err) {
+                             console.error('Failed to fetch portfolio', err);
+                             setMessages((prev) => [
+                                 ...prev,
+                                 { role: 'assistant', content: "❌ Failed to fetch your portfolio data. Please try again." }
+                             ]);
+                         }
+                         setStreamingContent('');
+                         return;
+                    }
                 }
             } catch (e) {
-                console.error('Failed to parse transfer JSON', e);
+                console.error('Failed to parse AI JSON', e);
             }
 
             setMessages((prev) => [

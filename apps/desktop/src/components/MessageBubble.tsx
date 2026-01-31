@@ -3,9 +3,11 @@ import { useState } from 'react';
 
 import { TransactionCard } from './TransactionCard';
 import type { TransactionData } from './TransactionCard';
+import { PortfolioCard } from './PortfolioCard';
+import type { PortfolioData } from './PortfolioCard';
 
 interface MessageBubbleProps {
-    content: string | TransactionData;
+    content: string | TransactionData | PortfolioData;
     role: 'user' | 'assistant';
     isStreaming?: boolean;
 }
@@ -66,8 +68,13 @@ export function MessageBubble({ content, role, isStreaming = false }: MessageBub
                 )}
 
                 {/* Assistant: Transaction Card */}
-                {!isUser && typeof content !== 'string' && (
-                    <TransactionCard data={content} />
+                {!isUser && typeof content !== 'string' && 'type' in content && content.type === 'transaction' && (
+                    <TransactionCard data={content as TransactionData} />
+                )}
+
+                {/* Assistant: Portfolio Card */}
+                {!isUser && typeof content !== 'string' && 'type' in content && content.type === 'portfolio' && (
+                    <PortfolioCard data={content as PortfolioData} />
                 )}
 
                 {/* Assistant: Text Response */}

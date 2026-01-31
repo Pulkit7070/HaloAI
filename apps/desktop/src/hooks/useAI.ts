@@ -148,7 +148,7 @@ export function buildUserMessage(text: string, screenshot?: string): Message {
 function detectContextType(
     messages: Message[],
     hasScreenshot: boolean
-): 'coding' | 'writing' | 'email' | 'transfer' | 'general' {
+): 'coding' | 'writing' | 'email' | 'transfer' | 'balance' | 'general' {
     const lastMessage = messages[messages.length - 1];
     const lastMessageText = typeof lastMessage?.content === 'string' 
         ? lastMessage.content.toLowerCase() 
@@ -176,8 +176,13 @@ function detectContextType(
     ];
 
     // Check for transfer context
-    if (['send', 'pay', 'transfer', 'xlm'].some(keyword => combinedText.includes(keyword))) {
+    if (['send', 'pay', 'transfer'].some(keyword => combinedText.includes(keyword))) {
         return 'transfer';
+    }
+
+    // Check for balance/portfolio context
+    if (['balance', 'portfolio', 'assets', 'holdings', 'how much xlm', 'how much money'].some(keyword => combinedText.includes(keyword))) {
+        return 'balance';
     }
 
     // Check for coding context
@@ -201,10 +206,15 @@ function detectContextType(
 
 // Get contextual system prompt based on detected context
 function getContextualSystemPrompt(
-    contextType: 'coding' | 'writing' | 'email' | 'transfer' | 'general',
+    contextType: 'coding' | 'writing' | 'email' | 'transfer' | 'balance' | 'general',
     visionContext?: string
 ): string {
-    const basePrompt = 'You are HaloAI, an intelligent desktop assistant powered by Cerebras GLM 4.7.';
+    const basePrompt = `You are Halo AI, an AI assistant specialized in the Stellar blockchain.
+Your role is to help users understand Stellar, manage XLM and Stellar assets, and perform transactions safely and clearly.
+Assume users may be beginners or experienced crypto users.
+Explain actions in simple terms.
+Never judge user intent.
+Always prioritize clarity, correctness, and transaction safety.`;
     
     // CRITICAL: If vision context exists, make it CLEAR that you have the screen content
     const visionSection = visionContext 
@@ -238,6 +248,23 @@ function getContextualSystemPrompt(
 1. If the address is missing, ask for it in plain text (NOT JSON).
 2. If the amount is missing, ask for it in plain text (NOT JSON).
 3. If both key details are present, output ONLY the JSON block.`;
+
+        case 'balance':
+            return `${basePrompt}
+
+**CONTEXT**: User wants to check their balance or portfolio.
+
+**YOUR ROLE**:
+✅ Identify the user's intent to view holdings.
+✅ Output ONLY structured JSON.
+❌ Do NOT include any conversational text.
+
+**OUTPUT FORMAT**:
+\`\`\`json
+{
+    "type": "balance"
+}
+\`\`\``;
 
         case 'coding':
             return `${basePrompt}${visionSection}${formattingRules}
@@ -316,25 +343,23 @@ Subject: [Clear, action-oriented]
         default: // general
             return `${basePrompt}${visionSection}${formattingRules}
 
-**CONTEXT**: General assistance.
+**CONTEXT**: User has a general question or needs explanation of Stellar concepts.
 
-**YOUR CAPABILITIES**:
-💻 Code debugging and solutions
-✍️ Writing and grammar fixes
-📧 Email drafting
-🔍 General Q&A${visionContext ? '\n✅ Screen context analysis (already captured)' : ''}
+**YOUR GOAL**:
+Explain Stellar concepts using plain language.
 
-**RESPONSE RULES**:
-✅ Be direct and actionable
-✅ Use structured formatting (headings, bullets)
-✅ Keep responses under 300 words
-✅ One code/text block per concept
-${visionContext ? '✅ Reference specific details from the screen\n❌ NEVER say "I can\'t see your screen"' : '⚠️ Ask for context if needed'}
+**TOPICS TO COVER (If relevant to query)**:
+- What Stellar is
+- What XLM is used for
+- Accounts vs addresses
+- Trustlines
+- Fees and reserves
 
-**IF CONTEXT IS UNCLEAR**:
-- State exactly what's missing (1 sentence)
-- Ask ONE specific question
-- Do NOT ask multiple clarifying questions`;
+**RULES**:
+✅ Avoid jargon unless necessary
+✅ Explain one concept at a time
+✅ Be simple and clear
+${visionContext ? '✅ Reference specific details from the screen if relevant' : ''}`;
     }
 }
 

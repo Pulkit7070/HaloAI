@@ -19,7 +19,7 @@ function displayKeybinding(binding: string): string {
     return binding;
 }
 
-const DEFAULT_KEYBINDING = isMac ? 'Command+Shift+Space' : 'Alt+Space';
+const DEFAULT_KEYBINDING = isMac ? 'Command+Shift+Space' : 'Ctrl+Space';
 
 export default function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
     const [currentKeybinding, setCurrentKeybinding] = useState(DEFAULT_KEYBINDING);

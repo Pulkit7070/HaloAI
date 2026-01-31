@@ -8,9 +8,9 @@ export function SocialProof() {
       </div>
       <div className="self-stretch flex flex-wrap justify-center items-center gap-8 md:gap-12 px-4">
         {[
-          "Cline",
-          "Cerebras",
-          "GLM 4.7",
+          "Stellar",
+          "Soroban",
+          "Privy",
           "Electron",
           "Next.js",
           "TypeScript",

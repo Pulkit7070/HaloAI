@@ -441,7 +441,7 @@ export function HeroSection() {
           Unleash the Power of Halo AI
         </h1>
         <p className="text-muted-foreground text-base md:text-base lg:text-lg font-medium leading-relaxed max-w-lg mx-auto">
-          Accelerate your workflow with intelligent AI agents that write, create, and optimize your work.
+          Powered by <b>Stellar Blockchain</b>
         </p>
       </div>
 

@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useAuth } from './useAuth';
-import { createWallet, getWallet, sendXLM } from '../services/walletApi';
+import { createWallet, getWallet, sendXLM, getTransactions, Transaction } from '../services/walletApi';
 
 interface SendState {
     status: 'idle' | 'loading' | 'success' | 'error';
@@ -15,6 +15,8 @@ export function useWallet() {
     const [isLoading, setIsLoading] = useState(false);
     const [error, setError] = useState<string | null>(null);
     const [sendState, setSendState] = useState<SendState>({ status: 'idle' });
+    const [transactions, setTransactions] = useState<Transaction[]>([]);
+    const [txLoading, setTxLoading] = useState(false);
 
     const fetchWallet = useCallback(async () => {
         if (!userId) return;
@@ -36,15 +38,30 @@ export function useWallet() {
         }
     }, [userId]);
 
+    const fetchTransactions = useCallback(async () => {
+        if (!userId) return;
+        setTxLoading(true);
+        try {
+            const txs = await getTransactions(userId);
+            setTransactions(txs);
+        } catch {
+            setTransactions([]);
+        } finally {
+            setTxLoading(false);
+        }
+    }, [userId]);
+
     useEffect(() => {
         if (authenticated && userId) {
             fetchWallet();
+            fetchTransactions();
         } else {
             setAddress(null);
             setBalance(null);
             setError(null);
+            setTransactions([]);
         }
-    }, [authenticated, userId, fetchWallet]);
+    }, [authenticated, userId, fetchWallet, fetchTransactions]);
 
     const initWallet = useCallback(async () => {
         if (!userId) return;
@@ -54,12 +71,13 @@ export function useWallet() {
             const wallet = await createWallet(userId);
             setAddress(wallet.address);
             setBalance(wallet.balance);
+            fetchTransactions();
         } catch (err: any) {
             setError(err.message || 'Failed to create wallet');
         } finally {
             setIsLoading(false);
         }
-    }, [userId]);
+    }, [userId, fetchTransactions]);
 
     const send = useCallback(async (to: string, amount: string) => {
         if (!userId) return;
@@ -68,10 +86,11 @@ export function useWallet() {
             const result = await sendXLM(userId, to, amount);
             setBalance(result.balance);
             setSendState({ status: 'success', txHash: result.txHash });
+            fetchTransactions();
         } catch (err: any) {
             setSendState({ status: 'error', error: err.message || 'Failed to send XLM' });
         }
-    }, [userId]);
+    }, [userId, fetchTransactions]);
 
     const refreshBalance = useCallback(async () => {
         await fetchWallet();
@@ -87,9 +106,12 @@ export function useWallet() {
         isLoading,
         error,
         sendState,
+        transactions,
+        txLoading,
         initWallet,
         send,
         refreshBalance,
         resetSendState,
+        fetchTransactions,
     };
 }

@@ -29,3 +29,21 @@ export async function sendXLM(
     if (!res.ok) throw new Error((await res.json()).error || 'Failed to send XLM');
     return res.json();
 }
+
+export interface Transaction {
+    id: string;
+    type: 'sent' | 'received';
+    amount: string;
+    asset: string;
+    from: string;
+    to: string;
+    date: string;
+    txHash: string;
+}
+
+export async function getTransactions(userId: string): Promise<Transaction[]> {
+    const res = await fetch(`${WALLETS_URL}/${userId}/transactions`);
+    if (!res.ok) return [];
+    const data = await res.json();
+    return data.transactions;
+}

@@ -157,6 +157,58 @@ router.post('/:userId/send', async (req: Request, res: Response) => {
     }
 });
 
+// GET /api/wallets/:userId/transactions — get transaction history
+router.get('/:userId/transactions', async (req: Request, res: Response) => {
+    try {
+        const { userId } = req.params;
+        const wallet = stmtGet.get(userId) as any;
+
+        if (!wallet) {
+            return res.status(404).json({ error: 'Wallet not found' });
+        }
+
+        const payments = await horizon
+            .payments()
+            .forAccount(wallet.public_key)
+            .order('desc')
+            .limit(20)
+            .call();
+
+        const transactions = payments.records
+            .filter((r: any) => r.type === 'payment' || r.type === 'create_account')
+            .map((r: any) => {
+                if (r.type === 'create_account') {
+                    return {
+                        id: r.id,
+                        type: 'received',
+                        amount: r.starting_balance,
+                        asset: 'XLM',
+                        from: r.source_account,
+                        to: r.account,
+                        date: r.created_at,
+                        txHash: r.transaction_hash,
+                    };
+                }
+                const isSent = r.from === wallet.public_key;
+                return {
+                    id: r.id,
+                    type: isSent ? 'sent' : 'received',
+                    amount: r.amount,
+                    asset: r.asset_type === 'native' ? 'XLM' : r.asset_code,
+                    from: r.from,
+                    to: r.to,
+                    date: r.created_at,
+                    txHash: r.transaction_hash,
+                };
+            });
+
+        return res.json({ transactions });
+    } catch (err: any) {
+        console.error('[Wallets] Transactions error:', err.message);
+        return res.json({ transactions: [] });
+    }
+});
+
 async function getBalance(publicKey: string): Promise<string> {
     try {
         const account = await horizon.loadAccount(publicKey);

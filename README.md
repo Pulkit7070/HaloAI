@@ -36,14 +36,15 @@ What if your AI assistant could not only understand your code but also manage yo
 ## Use Cases
 
 <div align="center">
+  <img src="apps/web/public/images/banner2.png" alt="HaloAI Demo - Screen Context Analysis" />
+  <p><strong>Use case: Screen Context Analysis & Asset Exploration</strong><br>HaloAI automatically captures and analyzes what's on your screen. Here, it's viewing a Stellar DEX asset list and providing intelligent insights about liquidity pools (AQUA, VELO, SHX), major cryptocurrencies (USDC, XRP, BTC, ETH), and other Stellar tokens — helping you understand market dynamics without switching apps.</p>
+</div>
+
+<div align="center">
   <img src="YOUR_CODING_USECASE_IMAGE_URL" alt="HaloAI Demo - Coding & Debugging" />
   <p><strong>Use case: Coding & Stellar Development</strong><br>Instantly debug Stellar SDK errors, analyze transaction failures, generate smart contract code, or get guidance on Horizon API calls — right from your terminal or IDE.</p>
 </div>
 
-<div align="center">
-  <img src="YOUR_WALLET_USECASE_IMAGE_URL" alt="HaloAI Demo - Crypto Wallet" />
-  <p><strong>Use case: Wallet & Payments</strong><br>Send XLM with natural language ("send 10 XLM to Alice"), check balances, view transaction history, manage trustlines, and explore Stellar assets — all without leaving your workflow.</p>
-</div>
 
 <div align="center">
   <img src="YOUR_WRITING_USECASE_IMAGE_URL" alt="HaloAI Demo - Content Creation" />
@@ -337,11 +338,16 @@ Pulkit7070/HaloAI/
 
 ## The Team
 
+**Team Kaizen** 🚀
+
 - **Pulkit** - [GitHub](https://github.com/Pulkit7070)
+- **Moin Akhtar** - [GitHub](https://github.com/MDMOINAKHTARR)
+- **Maaz** - [GitHub](https://github.com/somewherelostt)
+- **Hardik** - [GitHub](https://github.com/hardik180704)
 
 ---
 
 <div align="center">
-  <p>Built with ❤️ by <b>Pulkit</b></p>
+  <p>Made with ❤️ by <b>Team Kaizen</b></p>
   <p>Powered by <b>Cerebras GLM-4.7</b> • <b>Stellar Blockchain</b> • <b>Electron</b></p>
 </div>

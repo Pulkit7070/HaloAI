@@ -148,7 +148,7 @@ export function buildUserMessage(text: string, screenshot?: string): Message {
 function detectContextType(
     messages: Message[],
     hasScreenshot: boolean
-): 'coding' | 'writing' | 'email' | 'transfer' | 'balance' | 'general' {
+): 'coding' | 'writing' | 'email' | 'transfer' | 'balance' | 'history' | 'general' {
     const lastMessage = messages[messages.length - 1];
     const lastMessageText = typeof lastMessage?.content === 'string' 
         ? lastMessage.content.toLowerCase() 
@@ -185,6 +185,11 @@ function detectContextType(
         return 'balance';
     }
 
+    // Check for history/activity context
+    if (['history', 'activity', 'recent transactions', 'last transactions', 'what did i spend', 'payments'].some(keyword => combinedText.includes(keyword))) {
+        return 'history';
+    }
+
     // Check for coding context
     if (codingKeywords.some(keyword => combinedText.includes(keyword)) ||
         hasScreenshot) {
@@ -206,7 +211,7 @@ function detectContextType(
 
 // Get contextual system prompt based on detected context
 function getContextualSystemPrompt(
-    contextType: 'coding' | 'writing' | 'email' | 'transfer' | 'balance' | 'general',
+    contextType: 'coding' | 'writing' | 'email' | 'transfer' | 'balance' | 'history' | 'general',
     visionContext?: string
 ): string {
     const basePrompt = `You are Halo AI, an AI assistant specialized in the Stellar blockchain.
@@ -265,6 +270,26 @@ Always prioritize clarity, correctness, and transaction safety.`;
     "type": "balance"
 }
 \`\`\``;
+            
+        case 'history':
+            return `${basePrompt}
+
+**CONTEXT**: User wants to check their transaction history or activity.
+
+**YOUR ROLE**:
+✅ Identify the user's intent to view past transactions.
+✅ Output ONLY structured JSON.
+❌ Do NOT include any conversational text.
+
+**OUTPUT FORMAT**:
+\`\`\`json
+{
+    "type": "history"
+}
+\`\`\``;
+
+
+
 
         case 'coding':
             return `${basePrompt}${visionSection}${formattingRules}

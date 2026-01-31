@@ -5,13 +5,14 @@ import SettingsModal from './components/SettingsModal';
 import WalletPanel from './components/WalletPanel';
 import { MessageBubble } from './components/MessageBubble';
 
-import { getHorizonAccount } from './services/walletApi';
+import { getHorizonAccount, getTransactions } from './services/walletApi';
 import type { TransactionData } from './components/TransactionCard';
 import type { PortfolioData } from './components/PortfolioCard';
+import type { HistoryData } from './components/TransactionHistory';
 
 interface Message {
     role: 'user' | 'assistant';
-    content: string | TransactionData | PortfolioData;
+    content: string | TransactionData | PortfolioData | HistoryData;
 }
 
 export default function App() {
@@ -37,7 +38,7 @@ export default function App() {
 
     const { chat, isLoading } = useAI();
     const { authenticated } = useAuth();
-    const { address, send, sendState, resetSendState } = useWallet();
+    const { address, balance, send, sendState, resetSendState } = useWallet();
     const { analyzeScreenshot, isAnalyzing } = useVision();
     const { isRecording, transcript, toggleRecording } = useVoiceInput({
         onTranscript: (text, isFinal) => {
@@ -217,6 +218,30 @@ export default function App() {
                 if (parsedDetails) {
                     // Handle Transfer
                     if (parsedDetails.type === 'transfer') {
+                        // 1. Validate Address
+                        if (!/^G[A-Z0-9]{55}$/.test(parsedDetails.to)) {
+                             setMessages((prev) => [
+                                 ...prev,
+                                 { role: 'assistant', content: "❌ Invalid Stellar address detected. Please check the destination address." }
+                             ]);
+                             setStreamingContent('');
+                             return;
+                        }
+
+                        // 2. Validate Balance
+                        const currentBalance = parseFloat(balance || '0');
+                        const transferAmount = parseFloat(parsedDetails.amount);
+                        const reserve = 1.5; // Base reserve + safe margin
+
+                        if (currentBalance < transferAmount + reserve) {
+                             setMessages((prev) => [
+                                 ...prev,
+                                 { role: 'assistant', content: `❌ Insufficient balance. You have ${currentBalance} XLM, but need to cover the transfer (${transferAmount} XLM) plus reserve.` }
+                             ]);
+                             setStreamingContent('');
+                             return;
+                        }
+
                         setPendingTransaction(parsedDetails);
                         setMessages((prev) => [
                             ...prev,
@@ -260,6 +285,40 @@ export default function App() {
                          setStreamingContent('');
                          return;
                     }
+
+                    // Handle History
+                    if (parsedDetails.type === 'history') {
+                         if (!address) {
+                             setMessages((prev) => [
+                                 ...prev,
+                                 { role: 'assistant', content: "Please connect your wallet first to view your history." }
+                             ]);
+                             setStreamingContent('');
+                             return;
+                         }
+
+                         try {
+                             // Force fresh fetch
+                             const txs = await getTransactions(address); // Using address (as userId in our mock)
+                             const historyMessage: HistoryData = {
+                                 type: 'history',
+                                 transactions: txs
+                             };
+                             
+                             setMessages((prev) => [
+                                 ...prev,
+                                 { role: 'assistant', content: historyMessage }
+                             ]);
+                         } catch (err) {
+                             console.error('Failed to fetch history', err);
+                             setMessages((prev) => [
+                                 ...prev,
+                                 { role: 'assistant', content: "❌ Failed to fetch your history. Please try again." }
+                             ]);
+                         }
+                         setStreamingContent('');
+                         return;
+                    }
                 }
             } catch (e) {
                 console.error('Failed to parse AI JSON', e);
@@ -296,13 +355,20 @@ export default function App() {
     // Effect to handle sendState success
     // Effect to handle sendState success
     useEffect(() => {
-        if (sendState.status === 'success' && sendState.txHash) {
-            const explorerLink = `https://stellar.expert/explorer/testnet/tx/${sendState.txHash}`;
+        if (sendState.status === 'success' && sendState.txHash && pendingTransaction) {
             setMessages(prev => [
                 ...prev, 
                 { 
                     role: 'assistant', 
-                    content: `✅ **Transaction Sent Successfully!**\n\nSent **${pendingTransaction?.amount} XLM** to \`${pendingTransaction?.to.slice(0, 6)}...${pendingTransaction?.to.slice(-6)}\`\n\n[View on Stellar Explorer](${explorerLink})` 
+                    content: {
+                        type: 'transaction',
+                        status: 'success',
+                        amount: pendingTransaction.amount,
+                        asset: 'XLM',
+                        to: pendingTransaction.to,
+                        txHash: sendState.txHash!,
+                        network: 'Testnet'
+                    }
                 }
             ]);
             setPendingTransaction(null);
@@ -312,7 +378,16 @@ export default function App() {
                 ...prev, 
                 { 
                     role: 'assistant', 
-                    content: `❌ **Transaction Failed**: ${sendState.error}` 
+                    content: {
+                        type: 'transaction',
+                        status: 'failed',
+                        amount: pendingTransaction?.amount || '0',
+                        asset: 'XLM',
+                        to: pendingTransaction?.to || 'Unknown',
+                        txHash: '',
+                        network: 'Testnet',
+                        error: sendState.error
+                    }
                 }
             ]);
             setPendingTransaction(null);

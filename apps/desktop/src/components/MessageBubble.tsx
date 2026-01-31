@@ -5,9 +5,11 @@ import { TransactionCard } from './TransactionCard';
 import type { TransactionData } from './TransactionCard';
 import { PortfolioCard } from './PortfolioCard';
 import type { PortfolioData } from './PortfolioCard';
+import { TransactionHistory } from './TransactionHistory';
+import type { HistoryData } from './TransactionHistory';
 
 interface MessageBubbleProps {
-    content: string | TransactionData | PortfolioData;
+    content: string | TransactionData | PortfolioData | HistoryData;
     role: 'user' | 'assistant';
     isStreaming?: boolean;
 }
@@ -75,6 +77,11 @@ export function MessageBubble({ content, role, isStreaming = false }: MessageBub
                 {/* Assistant: Portfolio Card */}
                 {!isUser && typeof content !== 'string' && 'type' in content && content.type === 'portfolio' && (
                     <PortfolioCard data={content as PortfolioData} />
+                )}
+
+                {/* Assistant: History Card */}
+                {!isUser && typeof content !== 'string' && 'type' in content && content.type === 'history' && (
+                    <TransactionHistory data={content as HistoryData} />
                 )}
 
                 {/* Assistant: Text Response */}

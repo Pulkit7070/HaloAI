@@ -50,20 +50,81 @@ export async function sendXLM(
 
 export interface Transaction {
     id: string;
-    type: 'sent' | 'received';
+    type: 'sent' | 'received' | 'trade';
     amount: string;
     asset: string;
     from: string;
     to: string;
     date: string;
     txHash: string;
+    // Trade-specific (present when type === 'trade')
+    sourceAsset?: string;
+    sourceAmount?: string;
 }
 
-export async function getTransactions(userId: string): Promise<Transaction[]> {
-    const res = await safeFetch(`${WALLETS_URL}/${userId}/transactions`);
+const HORIZON_BASE = 'https://horizon-testnet.stellar.org';
+const VALID_OP_TYPES = ['payment', 'create_account', 'path_payment_strict_send', 'path_payment_strict_receive'];
+
+function parseHorizonPayment(r: any, walletAddress: string): Transaction {
+    if (r.type === 'path_payment_strict_send' || r.type === 'path_payment_strict_receive') {
+        return {
+            id: r.id,
+            type: 'trade',
+            amount: r.amount,
+            asset: r.asset_type === 'native' ? 'XLM' : r.asset_code,
+            sourceAsset: r.source_asset_type === 'native' ? 'XLM' : r.source_asset_code,
+            sourceAmount: r.source_amount,
+            from: r.from,
+            to: r.to,
+            date: r.created_at,
+            txHash: r.transaction_hash,
+        };
+    }
+    if (r.type === 'create_account') {
+        return {
+            id: r.id,
+            type: 'received',
+            amount: r.starting_balance,
+            asset: 'XLM',
+            from: r.source_account,
+            to: r.account,
+            date: r.created_at,
+            txHash: r.transaction_hash,
+        };
+    }
+    const isSent = r.from === walletAddress;
+    return {
+        id: r.id,
+        type: isSent ? 'sent' : 'received',
+        amount: r.amount,
+        asset: r.asset_type === 'native' ? 'XLM' : r.asset_code,
+        from: r.from,
+        to: r.to,
+        date: r.created_at,
+        txHash: r.transaction_hash,
+    };
+}
+
+async function fetchTransactionsFromHorizon(address: string): Promise<Transaction[]> {
+    const res = await fetch(`${HORIZON_BASE}/accounts/${address}/payments?order=desc&limit=20`);
     if (!res.ok) return [];
     const data = await res.json();
-    return data.transactions;
+    return (data._embedded?.records || [])
+        .filter((r: any) => VALID_OP_TYPES.includes(r.type))
+        .map((r: any) => parseHorizonPayment(r, address));
+}
+
+export async function getTransactions(userId: string, address?: string): Promise<Transaction[]> {
+    try {
+        const res = await safeFetch(`${WALLETS_URL}/${userId}/transactions`);
+        if (!res.ok) return [];
+        const data = await res.json();
+        return data.transactions;
+    } catch {
+        // Backend unreachable — fall back to direct Horizon
+        if (address) return fetchTransactionsFromHorizon(address);
+        return [];
+    }
 }
 
 export async function checkTrustline(userId: string): Promise<{ hasTrustline: boolean; balances: any[] }> {

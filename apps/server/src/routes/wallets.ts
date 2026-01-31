@@ -202,8 +202,9 @@ router.get('/:userId/transactions', async (req: Request, res: Response) => {
             .limit(20)
             .call();
 
+        const validTypes = ['payment', 'create_account', 'path_payment_strict_send', 'path_payment_strict_receive'];
         const transactions = payments.records
-            .filter((r: any) => r.type === 'payment' || r.type === 'create_account')
+            .filter((r: any) => validTypes.includes(r.type))
             .map((r: any) => {
                 if (r.type === 'create_account') {
                     return {
@@ -213,6 +214,20 @@ router.get('/:userId/transactions', async (req: Request, res: Response) => {
                         asset: 'XLM',
                         from: r.source_account,
                         to: r.account,
+                        date: r.created_at,
+                        txHash: r.transaction_hash,
+                    };
+                }
+                if (r.type === 'path_payment_strict_send' || r.type === 'path_payment_strict_receive') {
+                    return {
+                        id: r.id,
+                        type: 'trade',
+                        amount: r.amount,
+                        asset: r.asset_type === 'native' ? 'XLM' : r.asset_code,
+                        sourceAsset: r.source_asset_type === 'native' ? 'XLM' : r.source_asset_code,
+                        sourceAmount: r.source_amount,
+                        from: r.from,
+                        to: r.to,
                         date: r.created_at,
                         txHash: r.transaction_hash,
                     };

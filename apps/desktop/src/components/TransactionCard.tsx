@@ -9,6 +9,10 @@ export interface TransactionData {
     txHash: string;
     network: 'Testnet' | 'Mainnet';
     error?: string;
+    // Trade-specific
+    isTrade?: boolean;
+    sourceAsset?: string;
+    sourceAmount?: string;
 }
 
 interface TransactionCardProps {
@@ -53,21 +57,43 @@ export function TransactionCard({ data }: TransactionCardProps) {
                     data.status === 'success' ? 'text-emerald-400' : 
                     data.status === 'failed' ? 'text-red-400' : 'text-blue-400'
                 }`}>
-                    {data.status === 'success' ? 'Transaction Sent' : 
-                     data.status === 'failed' ? 'Transaction Failed' : 'Processing...'}
+                    {data.status === 'success'
+                        ? (data.isTrade ? 'Swap Successful' : 'Transaction Sent')
+                        : data.status === 'failed'
+                        ? (data.isTrade ? 'Swap Failed' : 'Transaction Failed')
+                        : 'Processing...'}
                 </span>
             </div>
 
             {/* Body */}
             <div className="p-4 space-y-4">
-                {/* Amount Row */}
-                <div className="flex justify-between items-baseline">
-                    <span className="text-xs text-white/40 font-medium uppercase tracking-wider">Amount</span>
-                    <div className="text-right">
-                        <span className="text-xl font-bold text-white tracking-tight">{data.amount}</span>
-                        <span className="text-sm text-white/60 ml-1.5 font-medium">{data.asset}</span>
+                {/* Amount Row(s) */}
+                {data.isTrade && data.sourceAmount && data.sourceAsset ? (
+                    <>
+                        <div className="flex justify-between items-baseline">
+                            <span className="text-xs text-white/40 font-medium uppercase tracking-wider">Sold</span>
+                            <div className="text-right">
+                                <span className="text-lg font-bold text-white tracking-tight">{data.sourceAmount}</span>
+                                <span className="text-sm text-white/60 ml-1.5 font-medium">{data.sourceAsset}</span>
+                            </div>
+                        </div>
+                        <div className="flex justify-between items-baseline">
+                            <span className="text-xs text-white/40 font-medium uppercase tracking-wider">Bought</span>
+                            <div className="text-right">
+                                <span className="text-lg font-bold text-emerald-400 tracking-tight">{data.amount}</span>
+                                <span className="text-sm text-white/60 ml-1.5 font-medium">{data.asset}</span>
+                            </div>
+                        </div>
+                    </>
+                ) : (
+                    <div className="flex justify-between items-baseline">
+                        <span className="text-xs text-white/40 font-medium uppercase tracking-wider">Amount</span>
+                        <div className="text-right">
+                            <span className="text-xl font-bold text-white tracking-tight">{data.amount}</span>
+                            <span className="text-sm text-white/60 ml-1.5 font-medium">{data.asset}</span>
+                        </div>
                     </div>
-                </div>
+                )}
 
                 {/* Network Row */}
                 <div className="flex justify-between items-baseline">

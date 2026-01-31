@@ -49,12 +49,14 @@ export function useWallet() {
         async function load() {
             setIsLoading(true);
             setError(null);
+            let walletAddress: string | null = null;
 
             try {
                 const wallet = await getWallet(userId!);
                 if (!cancelled) {
                     setAddress(wallet.address);
                     setBalance(wallet.balance);
+                    walletAddress = wallet.address;
                 }
             } catch (err: any) {
                 if (!cancelled) {
@@ -70,10 +72,10 @@ export function useWallet() {
                 if (!cancelled) setIsLoading(false);
             }
 
-            // Fetch transactions in parallel (non-blocking)
+            // Fetch transactions (falls back to direct Horizon if backend is offline)
             try {
                 if (!cancelled) setTxLoading(true);
-                const txs = await getTransactions(userId!);
+                const txs = await getTransactions(userId!, walletAddress ?? undefined);
                 if (!cancelled) setTransactions(txs);
             } catch (err: any) {
                 if (!cancelled) {

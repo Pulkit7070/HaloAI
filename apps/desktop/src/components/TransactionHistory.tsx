@@ -51,11 +51,13 @@ export function TransactionHistory({ data }: { data: HistoryData }) {
                         <div className="flex justify-between items-start mb-1">
                             <div className="flex items-center gap-2">
                                 <span className={`text-xs px-1.5 py-0.5 rounded font-medium ${
-                                    tx.type === 'received' 
-                                        ? 'bg-emerald-500/20 text-emerald-400' 
+                                    tx.type === 'trade'
+                                        ? 'bg-purple-500/20 text-purple-400'
+                                        : tx.type === 'received'
+                                        ? 'bg-emerald-500/20 text-emerald-400'
                                         : 'bg-orange-500/20 text-orange-400'
                                 }`}>
-                                    {tx.type === 'received' ? 'Received' : 'Sent'}
+                                    {tx.type === 'trade' ? 'Trade' : tx.type === 'received' ? 'Received' : 'Sent'}
                                 </span>
                                 <span className="text-[10px] text-white/40">
                                     {new Date(tx.date).toLocaleDateString()}
@@ -75,22 +77,32 @@ export function TransactionHistory({ data }: { data: HistoryData }) {
                         </div>
 
                         <div className="flex justify-between items-end">
-                            <div className="flex flex-col">
-                                <span className={`text-lg font-bold leading-tight ${
-                                    tx.type === 'received' ? 'text-emerald-400' : 'text-white'
-                                }`}>
-                                    {tx.type === 'received' ? '+' : '-'}{tx.amount}
-                                </span>
-                                <span className="text-xs text-white/40 font-medium">{tx.asset}</span>
-                            </div>
-                            <div className="text-right max-w-[120px]">
-                                <span className="text-[10px] text-white/30 block mb-0.5">
-                                    {tx.type === 'received' ? 'From' : 'To'}
-                                </span>
-                                <p className="text-[10px] font-mono text-white/60 truncate w-full">
-                                    {tx.type === 'received' ? tx.from : tx.to}
-                                </p>
-                            </div>
+                            {tx.type === 'trade' ? (
+                                <div className="flex flex-col">
+                                    <span className="text-sm font-bold text-purple-400 leading-tight">
+                                        {tx.sourceAmount} {tx.sourceAsset} → {tx.amount} {tx.asset}
+                                    </span>
+                                </div>
+                            ) : (
+                                <>
+                                    <div className="flex flex-col">
+                                        <span className={`text-lg font-bold leading-tight ${
+                                            tx.type === 'received' ? 'text-emerald-400' : 'text-white'
+                                        }`}>
+                                            {tx.type === 'received' ? '+' : '-'}{tx.amount}
+                                        </span>
+                                        <span className="text-xs text-white/40 font-medium">{tx.asset}</span>
+                                    </div>
+                                    <div className="text-right max-w-[120px]">
+                                        <span className="text-[10px] text-white/30 block mb-0.5">
+                                            {tx.type === 'received' ? 'From' : 'To'}
+                                        </span>
+                                        <p className="text-[10px] font-mono text-white/60 truncate w-full">
+                                            {tx.type === 'received' ? tx.from : tx.to}
+                                        </p>
+                                    </div>
+                                </>
+                            )}
                         </div>
                     </div>
                 ))}

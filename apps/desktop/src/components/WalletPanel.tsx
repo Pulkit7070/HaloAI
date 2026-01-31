@@ -22,6 +22,16 @@ export default function WalletPanel({ isOpen, onClose }: WalletPanelProps) {
     const [activeTab, setActiveTab] = useState<TabId>('wallet');
     const [swapAmount, setSwapAmount] = useState('');
 
+    type TxFilter = 'all' | 'payments' | 'trades';
+    const [txFilter, setTxFilter] = useState<TxFilter>('all');
+
+    const filteredTransactions = transactions.filter(tx => {
+        if (txFilter === 'all') return true;
+        if (txFilter === 'payments') return tx.type === 'sent' || tx.type === 'received';
+        if (txFilter === 'trades') return tx.type === 'trade';
+        return true;
+    });
+
     // Check trustline when Trade tab opens
     useEffect(() => {
         if (activeTab === 'trade' && address && hasTrustline === null) {
@@ -259,29 +269,55 @@ export default function WalletPanel({ isOpen, onClose }: WalletPanelProps) {
 
                             {/* Transaction History */}
                             <div>
-                                <label className="block text-xs font-medium text-white/60 mb-2">Recent Transactions</label>
+                                <div className="flex items-center justify-between mb-2">
+                                    <label className="text-xs font-medium text-white/60">Recent Transactions</label>
+                                    <div className="flex gap-1">
+                                        {(['all', 'payments', 'trades'] as TxFilter[]).map(f => (
+                                            <button
+                                                key={f}
+                                                onClick={() => setTxFilter(f)}
+                                                className={`px-2 py-0.5 text-[10px] rounded-md transition-all ${
+                                                    txFilter === f
+                                                        ? 'bg-white/10 text-white/80'
+                                                        : 'text-white/30 hover:text-white/50'
+                                                }`}
+                                                style={{ pointerEvents: 'auto', WebkitAppRegion: 'no-drag' } as any}
+                                                type="button"
+                                            >
+                                                {f === 'all' ? 'All' : f === 'payments' ? 'Payments' : 'Trades'}
+                                            </button>
+                                        ))}
+                                    </div>
+                                </div>
                                 {txLoading && transactions.length === 0 && (
                                     <div className="flex justify-center py-4">
                                         <div className="w-4 h-4 border-2 border-white/20 border-t-white/60 rounded-full animate-spin" />
                                     </div>
                                 )}
-                                {!txLoading && transactions.length === 0 && (
+                                {!txLoading && filteredTransactions.length === 0 && (
                                     <div className="text-center py-4">
-                                        <p className="text-white/20 text-xs">No transactions yet</p>
+                                        <p className="text-white/20 text-xs">
+                                            {txFilter === 'all' ? 'No transactions yet' : `No ${txFilter} yet`}
+                                        </p>
                                     </div>
                                 )}
-                                {transactions.length > 0 && (
+                                {filteredTransactions.length > 0 && (
                                     <div className="space-y-1.5">
-                                        {transactions.slice(0, 10).map((tx) => (
+                                        {filteredTransactions.slice(0, 10).map((tx) => (
                                             <div
                                                 key={tx.id}
                                                 className="flex items-center justify-between p-2.5 bg-white/[0.02] rounded-lg border border-white/[0.04] hover:bg-white/[0.04] transition-colors"
                                             >
                                                 <div className="flex items-center gap-2.5">
                                                     <div className={`w-6 h-6 rounded-full flex items-center justify-center ${
-                                                        tx.type === 'sent' ? 'bg-red-500/10' : 'bg-emerald-500/10'
+                                                        tx.type === 'trade' ? 'bg-purple-500/10'
+                                                        : tx.type === 'sent' ? 'bg-red-500/10' : 'bg-emerald-500/10'
                                                     }`}>
-                                                        {tx.type === 'sent' ? (
+                                                        {tx.type === 'trade' ? (
+                                                            <svg className="w-3 h-3 text-purple-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7h12m0 0l-4-4m4 4l-4 4m0 6H4m0 0l4 4m-4-4l4-4" />
+                                                            </svg>
+                                                        ) : tx.type === 'sent' ? (
                                                             <svg className="w-3 h-3 text-red-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                                                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 10l7-7m0 0l7 7m-7-7v18" />
                                                             </svg>
@@ -292,20 +328,35 @@ export default function WalletPanel({ isOpen, onClose }: WalletPanelProps) {
                                                         )}
                                                     </div>
                                                     <div>
-                                                        <p className="text-[11px] text-white/70 font-medium">
-                                                            {tx.type === 'sent' ? 'Sent' : 'Received'}
-                                                        </p>
-                                                        <p className="text-[10px] text-white/30 font-mono">
-                                                            {tx.type === 'sent' ? `To ${truncateAddr(tx.to)}` : `From ${truncateAddr(tx.from)}`}
-                                                        </p>
+                                                        {tx.type === 'trade' ? (
+                                                            <>
+                                                                <p className="text-[11px] text-white/70 font-medium">Trade</p>
+                                                                <p className="text-[10px] text-white/30">
+                                                                    {parseFloat(tx.sourceAmount!).toFixed(2)} {tx.sourceAsset} → {parseFloat(tx.amount).toFixed(2)} {tx.asset}
+                                                                </p>
+                                                            </>
+                                                        ) : (
+                                                            <>
+                                                                <p className="text-[11px] text-white/70 font-medium">
+                                                                    {tx.type === 'sent' ? 'Sent' : 'Received'}
+                                                                </p>
+                                                                <p className="text-[10px] text-white/30 font-mono">
+                                                                    {tx.type === 'sent' ? `To ${truncateAddr(tx.to)}` : `From ${truncateAddr(tx.from)}`}
+                                                                </p>
+                                                            </>
+                                                        )}
                                                     </div>
                                                 </div>
                                                 <div className="text-right">
-                                                    <p className={`text-[11px] font-medium ${
-                                                        tx.type === 'sent' ? 'text-red-400/80' : 'text-emerald-400/80'
-                                                    }`}>
-                                                        {tx.type === 'sent' ? '-' : '+'}{parseFloat(tx.amount).toFixed(2)} {tx.asset}
-                                                    </p>
+                                                    {tx.type === 'trade' ? (
+                                                        <p className="text-[11px] font-medium text-purple-400/80">Swap</p>
+                                                    ) : (
+                                                        <p className={`text-[11px] font-medium ${
+                                                            tx.type === 'sent' ? 'text-red-400/80' : 'text-emerald-400/80'
+                                                        }`}>
+                                                            {tx.type === 'sent' ? '-' : '+'}{parseFloat(tx.amount).toFixed(2)} {tx.asset}
+                                                        </p>
+                                                    )}
                                                     <p className="text-[10px] text-white/20">{formatDate(tx.date)}</p>
                                                 </div>
                                             </div>

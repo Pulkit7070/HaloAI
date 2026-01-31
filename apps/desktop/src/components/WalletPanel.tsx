@@ -1,7 +1,6 @@
 import { useState } from 'react';
 import { useAuth } from '../hooks/useAuth';
 import { useWallet } from '../hooks/useWallet';
-import WalletSendForm from './WalletSendForm';
 
 interface WalletPanelProps {
     isOpen: boolean;
@@ -10,7 +9,7 @@ interface WalletPanelProps {
 
 export default function WalletPanel({ isOpen, onClose }: WalletPanelProps) {
     const { ready, authenticated, login, logout } = useAuth();
-    const { address, balance, isLoading, error, sendState, initWallet, send, refreshBalance, resetSendState } = useWallet();
+    const { address, isLoading, error, initWallet } = useWallet();
     const [copied, setCopied] = useState(false);
 
     if (!isOpen) return null;
@@ -95,7 +94,7 @@ export default function WalletPanel({ isOpen, onClose }: WalletPanelProps) {
                     {/* State 1: Not authenticated */}
                     {ready && !authenticated && (
                         <div className="text-center space-y-4 py-4">
-                            <p className="text-white/40 text-sm font-light">Sign in to access your Stellar wallet.</p>
+                            <p className="text-white/40 text-sm font-light">Sign in to access your wallet.</p>
                             <button
                                 onClick={login}
                                 className="w-full px-4 py-3 bg-white text-black rounded-xl font-medium text-sm hover:bg-white/90 shadow-lg shadow-white/5 transition-all"
@@ -110,7 +109,7 @@ export default function WalletPanel({ isOpen, onClose }: WalletPanelProps) {
                     {/* State 2: Authenticated, no wallet */}
                     {ready && authenticated && !address && !isLoading && (
                         <div className="text-center space-y-4 py-4">
-                            <p className="text-white/40 text-sm font-light">Create a Stellar wallet to send and receive XLM.</p>
+                            <p className="text-white/40 text-sm font-light">Create an embedded wallet powered by Privy.</p>
                             {error && (
                                 <div className="p-3 bg-red-500/10 border border-red-500/10 rounded-lg">
                                     <p className="text-red-300 text-xs">{error}</p>
@@ -122,7 +121,7 @@ export default function WalletPanel({ isOpen, onClose }: WalletPanelProps) {
                                 style={{ pointerEvents: 'auto', WebkitAppRegion: 'no-drag' } as any}
                                 type="button"
                             >
-                                Create Stellar Wallet
+                                Create Wallet
                             </button>
                         </div>
                     )}
@@ -140,7 +139,7 @@ export default function WalletPanel({ isOpen, onClose }: WalletPanelProps) {
                             {/* Address */}
                             <div className="flex items-center justify-between p-4 bg-white/[0.03] rounded-xl border border-white/[0.06]">
                                 <div>
-                                    <span className="text-xs text-white/40 font-light block mb-1">Address</span>
+                                    <span className="text-xs text-white/40 font-light block mb-1">Wallet Address</span>
                                     <span className="text-sm text-white/80 font-mono">{truncatedAddress}</span>
                                 </div>
                                 <button
@@ -162,30 +161,10 @@ export default function WalletPanel({ isOpen, onClose }: WalletPanelProps) {
                                 </button>
                             </div>
 
-                            {/* Balance */}
-                            <div className="flex items-center justify-between p-4 bg-white/[0.03] rounded-xl border border-white/[0.06]">
-                                <div>
-                                    <span className="text-xs text-white/40 font-light block mb-1">Balance</span>
-                                    <span className="text-lg text-white/90 font-medium">{balance ?? '—'} <span className="text-sm text-white/40">XLM</span></span>
-                                </div>
-                                <button
-                                    onClick={refreshBalance}
-                                    disabled={isLoading}
-                                    className="text-white/40 hover:text-white/80 transition-colors p-1.5 rounded-md hover:bg-white/5"
-                                    title="Refresh balance"
-                                    type="button"
-                                    style={{ pointerEvents: 'auto', WebkitAppRegion: 'no-drag' } as any}
-                                >
-                                    <svg className={`w-4 h-4 ${isLoading ? 'animate-spin' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
-                                    </svg>
-                                </button>
-                            </div>
-
-                            {/* Send Form */}
-                            <div>
-                                <label className="block text-sm font-medium text-white/80 mb-3">Send XLM</label>
-                                <WalletSendForm onSend={send} sendState={sendState} onReset={resetSendState} />
+                            {/* Privy badge */}
+                            <div className="flex items-center gap-2 px-4 py-3 bg-white/[0.03] rounded-xl border border-white/[0.06]">
+                                <div className="w-2 h-2 bg-emerald-400 rounded-full" />
+                                <span className="text-xs text-white/50 font-light">Managed by Privy — visible in your Privy dashboard</span>
                             </div>
 
                             {/* Sign Out */}

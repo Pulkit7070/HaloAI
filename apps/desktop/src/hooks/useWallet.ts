@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useAuth } from './useAuth';
-import { createWallet, getWallet, sendXLM, getTransactions, Transaction } from '../services/walletApi';
+import { createWallet, getWallet, sendXLM, getTransactions } from '../services/walletApi';
+import type { Transaction } from '../services/walletApi';
 
 interface SendState {
     status: 'idle' | 'loading' | 'success' | 'error';

@@ -1,133 +1,183 @@
 # HaloAI
 
 <div align="center">
-  <h1>The Intelligent Desktop Assistant That Sees What You See</h1>
+  <a href="LINK_TO_YOUR_DEMO_VIDEO">
+    <img src="YOUR_DEMO_THUMBNAIL_IMAGE_URL" alt="Watch HaloAI Demo" />
+  </a>
+  <h1>The AI-Powered Stellar Assistant That Lives With You</h1>
   <p>
-    <b>Powered by Stellar Blockchain & Advanced AI</b>
+    <b>Powered by Stellar Blockchain</b>
+  </p>
+  <p>
+    <a href="https://github.com/Pulkit7070/HaloAI/issues">Report Bug</a> ·
+    <a href="https://github.com/Pulkit7070/HaloAI/issues">Request Feature</a> ·
+    <a href="https://doc.haloai.kaizenn.xyz/">Documentation</a>
   </p>
 </div>
 
 ---
 
-## 🚀 Overview
+## The "Why" (Our Story)
 
-HaloAI is a **native desktop assistant** built to live *with* you, not just in a browser tab. It wakes up instantly with a global hotkey, **automatically captures and analyzes your screen**, and helps you execute tasks without breaking your flow.
+Imagine you're coding late at night, debugging a cryptic Stellar transaction error. You need help, but switching to a browser, finding ChatGPT, copying your code, and pasting it breaks your entire flow. By the time you get an answer, you've lost your mental context.
 
-Unlike traditional chatbots, HaloAI is integrated directly into your OS workflow with **global shortcuts**, **vision AI**, **voice input**, and an **embedded Stellar crypto wallet**.
+**We built HaloAI because we wanted an assistant that lives *with* us, not in a browser tab.**
 
-## ✨ Key Features
+We didn't want another chatbot. We wanted a "tap-on-the-shoulder" companion — something that:
+- Wakes up instantly with a keyboard shortcut
+- Sees your screen and understands your context
+- Helps you debug, write, send crypto, and more — without leaving your workflow
+- Integrates seamlessly with the Stellar blockchain for instant, transparent payments
 
-### 🖥️ Native Desktop Experience
-- **Instant Wake**: Summon HaloAI instantly with a customizable global hotkey
-  - **macOS**: `Cmd + Shift + Space` (default)
-  - **Windows/Linux**: `Ctrl + Space` (default)
-  - Fully customizable in settings
-- **Auto Screen Capture**: Automatically captures your screen when activated to understand context
-- **Vision AI Analysis**: Analyzes screen content using **Llama 3.2 Vision** via OpenRouter
-- **Contextual AI**: Detects what you're doing and adapts responses (coding, writing, email, Stellar operations)
+What if your AI assistant could not only understand your code but also manage your crypto wallet, execute instant blockchain payments, and help you explore the Stellar ecosystem — all from a single, beautiful native desktop app?
+
+**That's HaloAI.**
+
+## Use Cases
+
+<div align="center">
+  <img src="YOUR_CODING_USECASE_IMAGE_URL" alt="HaloAI Demo - Coding & Debugging" />
+  <p><strong>Use case: Coding & Stellar Development</strong><br>Instantly debug Stellar SDK errors, analyze transaction failures, generate smart contract code, or get guidance on Horizon API calls — right from your terminal or IDE.</p>
+</div>
+
+<div align="center">
+  <img src="YOUR_WALLET_USECASE_IMAGE_URL" alt="HaloAI Demo - Crypto Wallet" />
+  <p><strong>Use case: Wallet & Payments</strong><br>Send XLM with natural language ("send 10 XLM to Alice"), check balances, view transaction history, manage trustlines, and explore Stellar assets — all without leaving your workflow.</p>
+</div>
+
+<div align="center">
+  <img src="YOUR_WRITING_USECASE_IMAGE_URL" alt="HaloAI Demo - Content Creation" />
+  <p><strong>Use case: Writing & Email Drafting</strong><br>Read email threads on screen and draft thoughtful replies in your tone, summarize meeting notes, or turn bullet points into structured documents — with full context awareness.</p>
+</div>
+
+## The Cerebras & Cline Experience
+
+This project came to life through the power of cutting-edge AI infrastructure and rapid development tools. Here's what made it possible:
+
+### Cerebras GLM-4.7: "It feels instant"
+
+The biggest bottleneck for desktop assistants is latency. Waiting 5–10 seconds for an AI response destroys the magical "assistant" feeling.
+
+- **What worked**: We integrated Cerebras GLM-4.7 via their Z.ai endpoint and were blown away. Token generation is so fast that responses stream in before you finish reading your question.
+- **The Magic**: We streamed responses directly to our React components with real-time markdown rendering. Because Cerebras is so fast, the UI feels like it's thinking *with* you, not *for* you.
+- **Real-world impact**: 
+  - Code debugging suggestions appear in under 500ms
+  - Stellar transaction JSON generation is nearly instantaneous
+  - Voice-to-text to AI response feels like a single fluid motion
+
+### Cline: "Vibe Coding at Its Best"
+
+We practiced "Vibe Coding" — focusing on high-level architecture and user experience while Cline handled implementation details.
+
+- **Rapid Prototyping**: Cline scaffolded our entire Electron + React + Vite monorepo in minutes. Setting up TurboRepo, configuring TypeScript, and wiring up hot reload would have taken hours manually.
+- **Refactoring Power**: When we pivoted from a sidebar wallet UI to a glassmorphic floating panel design, Cline refactored Tailwind classes across 20+ components instantly.
+- **Stellar Integration**: Cline helped us implement complex Stellar SDK operations — from keypair generation to transaction signing to trustline management — by referencing official docs and generating type-safe code.
+- **Learning**: Providing Cline with clear context (current file structure, design system, API schemas) helped it make smarter architectural decisions.
+
+## Challenges Faced
+
+Building a production-ready desktop app with blockchain integration in record time came with hurdles:
+
+### 1. Screen Capture Reliability (Windows 11)
+- **Problem**: Electron's `desktopCapturer.getSources()` would sporadically timeout on Windows 11, especially when the app window was visible during capture.
+- **Solution**: 
+  - Implemented retry logic with exponential backoff (3 attempts, 5-second timeout each)
+  - Added 500ms delay before capture to let Windows compositor settle
+  - Hide window *before* capture to avoid capturing ourselves
+- **Learning**: Platform-specific quirks require defensive programming and graceful fallbacks.
+
+### 2. Stellar Transaction Signing with Privy
+- **Problem**: Privy's server-side SDK doesn't expose direct ed25519 signing methods needed for Stellar transactions.
+- **Solution**: 
+  - Stored encrypted secret keys in Supabase with AES-256-GCM
+  - Server-side decryption and transaction signing using Stellar SDK
+  - Implemented scrypt key derivation for robust encryption
+- **Learning**: Balancing security (non-custodial wallets) with UX (seamless auth) requires careful architecture.
+
+### 3. Vision Analysis Rate Limits
+- **Problem**: OpenRouter's Llama 3.2 Vision model had rate limits that would block screen analysis during rapid testing.
+- **Solution**: 
+  - Built tiered fallback: OpenRouter → Tesseract OCR → text-only mode
+  - Added error handling that preserves AI chat functionality even without vision
+  - Implemented caching to avoid redundant vision API calls
+- **Learning**: Always plan for API failures with graceful degradation.
+
+### 4. Contextual AI System Complexity
+- **Problem**: HaloAI needed to detect user intent (coding vs. wallet operations) and switch system prompts accordingly.
+- **Solution**: 
+  - Built keyword detection for context modes (transfer, balance, coding, email, etc.)
+  - Crafted specialized system prompts for each mode
+  - Integrated vision context into prompts dynamically
+- **Learning**: Well-designed system prompts are 80% of AI UX quality.
+
+## What It Does
+
+- **Instant Wake**: Double-tap your global hotkey (`Cmd+Shift+Space` on macOS, `Ctrl+Space` on Windows/Linux) to summon HaloAI. No clicks required.
+- **Context Vision**: Captures your active screen instantly and analyzes it with Llama 3.2 Vision. Knows what you're working on without you explaining.
 - **Smart Actions**:
-  - **Debug**: Reads stack traces and suggests fixes
-  - **Draft**: Reads email threads and drafts responses in your tone
-  - **Summarize**: Organizes meeting notes into actionable items
-  - **Code**: Provides working, copy-paste ready solutions
-- **Frameless UI**: Transparent, always-on-top window with glassmorphism design
-- **System Tray Integration**: Runs in background, accessible anytime
-
-### 💰 Built-in Stellar Wallet
-- **Integrated Wallet**: Secure, non-custodial wallet powered by Stellar blockchain
-- **Auto-Creation**: Wallets created on-demand via Privy authentication
-- **Instant Transactions**: Send and receive XLM with natural language commands
-- **Transaction History**: View recent transfers with full details (amount, sender, recipient, timestamp)
-- **Portfolio View**: Real-time XLM balance display
-- **Testnet Support**: Automatic Friendbot funding for testing
-- **Secure Storage**: AES-256-GCM encrypted private keys in Supabase
-- **Advanced Features**:
+  - **Debug**: Paste a stack trace? HaloAI reads it and suggests fixes with working code.
+  - **Draft**: Email thread on screen? It drafts a professional reply matching your tone.
+  - **Summarize**: Meeting notes scattered around? Organizes them into action items.
+  - **Send Crypto**: "Send 5 XLM to Bob" — HaloAI parses intent, generates transaction JSON, and executes it.
+  - **Portfolio**: "What's my balance?" — Displays real-time XLM holdings.
+  - **History**: "Show my transactions" — Visualizes last 20 Stellar operations with timestamps.
+  - **Explore Assets**: "What's USDC on Stellar?" — Explains custom assets and guides trustline creation.
+- **Voice Mode**: Don't want to type? Just speak. Integrated **Deepgram** for near-instant speech-to-text.
+- **Stellar Wallet**: Built-in non-custodial wallet with:
+  - Automatic testnet wallet creation and funding via Friendbot
+  - Send/receive XLM with natural language
+  - Transaction history with StellarChain explorer links
   - Trustline management for custom Stellar assets
-  - Asset discovery (USDC, EURC, and more)
-  - Safety warnings for cross-chain operations
-  - Price information guidance
+  - Safety warnings preventing cross-chain operations
 
-### 🤖 Advanced AI Capabilities
-- **GLM 4.7 Model**: Powered by Cerebras for ultra-fast inference (via Z.ai)
-- **Contextual System Prompts**: Automatically adapts to your task:
-  - **Coding Mode**: Debug assistance with screen context
-  - **Writing Mode**: Grammar fixes and content improvement
-  - **Email Mode**: Professional email drafting
-  - **Transfer Mode**: Structured JSON for Stellar transactions
-  - **Balance/History Mode**: Portfolio and activity queries
-  - **Asset Discovery**: Learn about Stellar tokens
-  - **Trustline Mode**: Guided trustline creation with safety checks
-  - **Advanced Mode**: Technical Stellar SDK assistance
-  - **Safety Warnings**: Blocks dangerous cross-chain operations
-- **Streaming Responses**: Real-time AI output with markdown rendering
-- **Vision Context Integration**: Screen content automatically included in AI prompts
-- **Fallback Mode**: Works without API keys in demo mode
+## Tech Stack
 
-### 🎙️ Voice & Multimodal
-- **Voice Input**: Speak naturally using **Deepgram**'s ultra-fast speech-to-text
-- **Real-time Transcription**: Live transcription with final text processing
-- **Vision Analysis**: Automatic screen capture and OCR fallback (Tesseract.js)
-- **Multimodal Context**: Combines voice, vision, and text for comprehensive understanding
-
-### 🔐 Authentication & Security
-- **Privy Integration**: Secure authentication for wallet access
-- **Encrypted Storage**: Private keys encrypted with AES-256-GCM
-- **Supabase Backend**: Secure cloud database for wallet data
-- **Non-Custodial**: Users maintain full control of their keys
-- **Session Management**: Persistent auth state with electron-store
-
-
-## 🛠️ Tech Stack
-
-This project is a **modern monorepo** managed by **TurboRepo** with **pnpm workspaces**.
+This project uses a modern monorepo architecture managed by **TurboRepo** and **pnpm workspaces**.
 
 ### Desktop App (`apps/desktop`)
-- **Runtime**: [Electron 28](https://www.electronjs.org/) with TypeScript
-- **Frontend**: [React 18](https://react.dev/) + [Vite 5](https://vitejs.dev/)
-- **Styling**: [TailwindCSS 3.4](https://tailwindcss.com/)
-- **UI Components**: Custom components with react-markdown, react-syntax-highlighter
-- **State Management**: React hooks (useAI, useWallet, useAuth, useVision, useVoiceInput)
+
+- **Framework**: [Electron 28](https://www.electronjs.org/) + [Vite 5](https://vitejs.dev/)
+- **Frontend**: [React 18](https://react.dev/) + [TypeScript](https://www.typescriptlang.org/)
+- **Styling**: [TailwindCSS 3.4](https://tailwindcss.com/) with glassmorphism design
+- **UI Components**: react-markdown, react-syntax-highlighter for rich message rendering
+- **Vision**: OpenRouter (Llama 3.2 Vision) / Tesseract.js (OCR Fallback)
+- **Voice**: [Deepgram API](https://deepgram.com/) for speech-to-text
+- **Screen Capture**: Electron desktopCapturer with retry logic
+- **Authentication**: [Privy](https://privy.io/) embedded wallets
 - **Storage**: electron-store for settings and preferences
-- **Screen Capture**: Electron desktopCapturer API
-- **OCR**: Tesseract.js for fallback text extraction
-- **Build**: electron-builder for cross-platform packaging
 
 ### Server (`apps/server`)
-- **Framework**: [Express 4](https://expressjs.com/)
+
+- **Framework**: [Express 4](https://expressjs.com/) with TypeScript
 - **Database**: [Supabase](https://supabase.com/) (PostgreSQL)
 - **Blockchain**: [Stellar SDK 12.3](https://developers.stellar.org/docs/data/sdks/javascript)
 - **Network**: Stellar Testnet (Horizon API)
-- **Encryption**: Node.js crypto (AES-256-GCM with scrypt key derivation)
-- **API Endpoints**:
-  - `POST /api/wallets` - Create wallet
-  - `GET /api/wallets/:userId` - Get wallet info
-  - `POST /api/wallets/:userId/send` - Send XLM
-  - `GET /api/wallets/:userId/transactions` - Transaction history
+- **Encryption**: AES-256-GCM with scrypt key derivation
+- **API Endpoints**: Wallet creation, balance queries, XLM transfers, transaction history
 
-### Web App (`apps/web`)
-- **Framework**: [Next.js 15.2](https://nextjs.org/) with App Router
-- **UI Library**: [Shadcn/UI](https://ui.shadcn.com/) (Radix UI primitives)
+### Web Landing (`apps/web`)
+
+- **Framework**: [Next.js 15.2](https://nextjs.org/) (App Router)
+- **UI Components**: [Shadcn/UI](https://ui.shadcn.com/) + [Framer Motion](https://www.framer.com/motion/)
 - **Styling**: TailwindCSS with tailwindcss-animate
-- **Animations**: [Framer Motion](https://www.framer.com/motion/)
 - **Forms**: react-hook-form + zod validation
-- **Charts**: Recharts for data visualization
-- **Icons**: Lucide React
 - **Analytics**: Vercel Analytics
 
-### AI Infrastructure
-- **LLM**: [GLM 4.7](https://cerebras.ai/) via Cerebras API (Z.ai)
-  - Model: `zai-glm-4.7`
-  - Temperature: 1.0
-  - Top-p: 0.95
-  - Max tokens: 2048
-  - Streaming support
-- **Vision**: [OpenRouter](https://openrouter.ai/) (Llama 3.2 Vision)
-- **Voice**: [Deepgram](https://deepgram.com/) speech-to-text API
-- **OCR Fallback**: Tesseract.js for offline text extraction
+### AI & Infrastructure
 
-## 🚀 Getting Started
+- **Inference**: [Cerebras API](https://cerebras.ai/) (GLM-4.7 via Z.ai)
+  - Model: `zai-glm-4.7`
+  - Temperature: 1.0, Top-p: 0.95
+  - Max tokens: 2048
+  - Streaming: Enabled
+- **Vision**: [OpenRouter](https://openrouter.ai/) (Llama 3.2 Vision)
+- **Voice**: [Deepgram](https://deepgram.com/)
+- **Package Manager**: [PNPM](https://pnpm.io/)
+
+## Getting Started
 
 ### Prerequisites
+
 - **Node.js 20.x** (specified in package.json engines)
 - **pnpm 8.15.5+** (`npm install -g pnpm`)
 - **Supabase account** (for wallet storage)
@@ -141,7 +191,7 @@ This project is a **modern monorepo** managed by **TurboRepo** with **pnpm works
 
 1. **Clone the repository**
    ```bash
-   git clone https://github.com/yourusername/HaloAI.git
+   git clone https://github.com/Pulkit7070/HaloAI.git
    cd HaloAI
    ```
 
@@ -218,10 +268,13 @@ pnpm build:win    # Windows only
 pnpm build:mac    # macOS only
 ```
 
-## 📂 Project Structure
+
+## Project Structure
+
+A high-level overview of our monorepo structure:
 
 ```text
-HaloAI/
+Pulkit7070/HaloAI/
 ├── apps/
 │   ├── desktop/                      # Electron Desktop App
 │   │   ├── electron/
@@ -229,125 +282,66 @@ HaloAI/
 │   │   ├── src/
 │   │   │   ├── App.tsx               # Main React component
 │   │   │   ├── components/
-│   │   │   │   ├── MessageBubble.tsx # Chat message rendering
-│   │   │   │   ├── WalletPanel.tsx   # Wallet UI
+│   │   │   │   ├── MessageBubble.tsx # Chat with markdown rendering
+│   │   │   │   ├── WalletPanel.tsx   # Stellar wallet UI
 │   │   │   │   ├── WalletSendForm.tsx
 │   │   │   │   ├── TransactionHistory.tsx
-│   │   │   │   ├── TransactionCard.tsx
-│   │   │   │   ├── PortfolioCard.tsx
 │   │   │   │   └── SettingsModal.tsx
 │   │   │   ├── hooks/
 │   │   │   │   ├── useAI.ts          # AI chat with contextual prompts
 │   │   │   │   ├── useWallet.ts      # Stellar wallet operations
 │   │   │   │   ├── useAuth.ts        # Privy authentication
-│   │   │   │   ├── useVision.ts      # Screen capture & vision analysis
+│   │   │   │   ├── useVision.ts      # Screen capture & vision
 │   │   │   │   └── useVoiceInput.ts  # Deepgram voice input
-│   │   │   ├── services/
-│   │   │   │   └── walletApi.ts      # API client for server
-│   │   │   └── index.css             # Global styles
-│   │   ├── package.json
-│   │   └── vite.config.ts
+│   │   │   └── services/
+│   │   │       └── walletApi.ts      # API client
+│   │   └── package.json
 │   │
 │   ├── server/                       # Express API Server
 │   │   ├── src/
 │   │   │   ├── index.ts              # Server entry point
 │   │   │   └── routes/
-│   │   │       └── wallets.ts        # Wallet CRUD + Stellar operations
-│   │   ├── package.json
-│   │   └── wallets.db                # SQLite (legacy, now using Supabase)
+│   │   │       └── wallets.ts        # Wallet CRUD + Stellar ops
+│   │   └── package.json
 │   │
 │   └── web/                          # Next.js Landing Page
 │       ├── app/
 │       │   ├── layout.tsx
 │       │   ├── page.tsx              # Landing page
 │       │   └── globals.css
-│       ├── components/               # UI components (78 files)
+│       ├── components/               # Shadcn/UI components
 │       │   ├── hero-section.tsx
 │       │   ├── dashboard-preview.tsx
 │       │   ├── bento-section.tsx
-│       │   ├── how-it-works-section.tsx
-│       │   ├── faq-section.tsx
-│       │   └── ... (Shadcn/UI components)
-│       ├── lib/
-│       │   └── utils.ts
-│       ├── public/                   # Static assets
-│       ├── package.json
-│       └── next.config.mjs
+│       │   └── ... (78 components)
+│       └── package.json
 │
 ├── packages/
-│   └── ui/                           # Shared UI components (future)
+│   └── ui/                           # Shared UI (future)
 │
-├── package.json                      # Root workspace config
-├── pnpm-workspace.yaml               # pnpm workspace definition
-├── turbo.json                        # TurboRepo configuration
+├── package.json                      # Root workspace
+├── pnpm-workspace.yaml               # pnpm workspaces
+├── turbo.json                        # TurboRepo config
 └── README.md
 ```
 
-## 🎯 Key Features Deep Dive
+## Hackathon Context
 
-### Screen Capture & Vision Analysis
-- **Auto-Capture**: Captures screen before showing window (captures what's underneath)
-- **Retry Logic**: 3 attempts with 5-second timeout per attempt
-- **Windows 11 Optimized**: 500ms delay for compositor reliability
-- **Vision Processing**: Sends to OpenRouter for AI analysis
-- **OCR Fallback**: Tesseract.js extracts text if vision fails
-- **Context Injection**: Vision results automatically included in AI prompts
+- **Built for**: Fast-paced innovation with modern AI infrastructure
+- **Focus**: Desktop-native AI assistant with embedded blockchain wallet
+- **Tools Used**: 
+    - **Cline**: Rapid prototyping, monorepo scaffolding, and refactoring
+    - **Cerebras**: Ultra-fast GLM-4.7 inference for instant AI responses
+    - **Stellar**: Blockchain infrastructure for transparent, instant payments
+    - **Electron**: Cross-platform desktop capabilities
 
-### Contextual AI System
-HaloAI detects your intent and adapts its behavior:
-- **Transfer Detection**: Extracts payment details, outputs structured JSON
-- **Balance Queries**: Shows portfolio with real-time data
-- **History Requests**: Displays transaction timeline
-- **Coding Help**: Provides working code with explanations
-- **Email Drafting**: Matches tone and context from screen
-- **Safety Mode**: Blocks cross-chain operations (Ethereum, BSC, etc.)
+## The Team
 
-### Stellar Wallet Features
-- **Testnet Ready**: Automatic Friendbot funding
-- **Transaction Signing**: Server-side signing with encrypted keys
-- **Balance Tracking**: Real-time XLM balance updates
-- **History**: Last 20 transactions with full details
-- **Asset Support**: Native XLM + custom assets via trustlines
-- **Safety Checks**: Validates addresses, prevents cross-chain errors
+- **Pulkit** - [GitHub](https://github.com/Pulkit7070)
 
-## 🔧 Configuration
+---
 
-### Global Shortcuts
-- Default: `Cmd+Shift+Space` (macOS) or `Ctrl+Space` (Windows/Linux)
-- Customizable in Settings modal
-- `Escape` always hides the window
-
-### AI Model Settings
-- Model: `zai-glm-4.7` (GLM 4.7 via Cerebras)
-- Temperature: 1.0 (recommended by Z.ai)
-- Top-p: 0.95
-- Max tokens: 2048
-- Streaming: Enabled
-- Clear thinking: Disabled (preserves reasoning for coding)
-
-### Stellar Network
-- Network: Testnet (Horizon: `https://horizon-testnet.stellar.org`)
-- Friendbot: `https://friendbot.stellar.org`
-- Base fee: 100 stroops (0.00001 XLM)
-- Transaction timeout: 30 seconds
-
-## 🛡️ Security
-
-- **Encrypted Keys**: AES-256-GCM with scrypt key derivation
-- **Secure Storage**: Supabase with service role key
-- **Non-Custodial**: Users control their keys
-- **HTTPS Only**: All API calls over secure connections
-- **Input Validation**: Zod schemas for form validation
-- **CORS**: Configured for localhost development
-
-## 📝 License
-
-[MIT](LICENSE)
-
-## 🤝 Contributing
-
-Contributions are welcome! Please feel free to submit a Pull Request.
-
-## 📧 Support
-
-For issues and questions, please open an issue on GitHub.
+<div align="center">
+  <p>Built with ❤️ by <b>Pulkit</b></p>
+  <p>Powered by <b>Cerebras GLM-4.7</b> • <b>Stellar Blockchain</b> • <b>Electron</b></p>
+</div>

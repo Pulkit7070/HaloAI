@@ -1,4 +1,5 @@
-import { app, BrowserWindow, globalShortcut, ipcMain, Tray, Menu, nativeImage, desktopCapturer, screen } from 'electron';
+import electron from 'electron';
+const { app, BrowserWindow, globalShortcut, ipcMain, Tray, Menu, nativeImage, desktopCapturer, screen, shell } = electron;
 import path from 'path';
 import { fileURLToPath } from 'url';
 import Store from 'electron-store';

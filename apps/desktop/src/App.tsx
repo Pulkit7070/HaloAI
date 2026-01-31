@@ -280,7 +280,7 @@ export default function App() {
                                 {authenticated && address ? (
                                     <span className="text-[10px] font-mono text-white/50">{address.slice(0, 4)}...{address.slice(-4)}</span>
                                 ) : (
-                                    <span className="text-[10px] text-white/50">Login</span>
+                                    <span className="text-[10px] text-white/50">Wallet</span>
                                 )}
                             </button>
                             <button

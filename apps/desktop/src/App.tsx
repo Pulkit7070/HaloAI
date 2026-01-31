@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef } from 'react';
-import { useAI, useVoiceInput, useVision } from './hooks';
+import { useAI, useVoiceInput, useVision, useAuth, useWallet } from './hooks';
 import SettingsModal from './components/SettingsModal';
+import WalletPanel from './components/WalletPanel';
 import { MessageBubble } from './components/MessageBubble';
 
 interface Message {
@@ -19,10 +20,13 @@ export default function App() {
     const [visionEverUsed, setVisionEverUsed] = useState(false);
     const [streamingContent, setStreamingContent] = useState('');
     const [isSettingsOpen, setIsSettingsOpen] = useState(false);
+    const [isWalletOpen, setIsWalletOpen] = useState(false);
     const inputRef = useRef<HTMLTextAreaElement>(null);
     const messagesEndRef = useRef<HTMLDivElement>(null);
 
     const { chat, isLoading } = useAI();
+    const { authenticated } = useAuth();
+    const { address } = useWallet();
     const { analyzeScreenshot, isAnalyzing } = useVision();
     const { isRecording, transcript, toggleRecording } = useVoiceInput({
         onTranscript: (text, isFinal) => {
@@ -266,6 +270,20 @@ export default function App() {
                         </div>
                         <div className="no-drag flex items-center gap-3">
                             <button
+                                onClick={() => setIsWalletOpen(true)}
+                                className="text-white/40 hover:text-white/80 transition-colors p-1.5 rounded-md hover:bg-white/5 flex items-center gap-1.5"
+                                title="Wallet"
+                            >
+                                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M21 12a2.25 2.25 0 00-2.25-2.25H15a3 3 0 11-6 0H5.25A2.25 2.25 0 003 12m18 0v6a2.25 2.25 0 01-2.25 2.25H5.25A2.25 2.25 0 013 18v-6m18 0V9M3 12V9m18 0a2.25 2.25 0 00-2.25-2.25H5.25A2.25 2.25 0 003 9m18 0V6a2.25 2.25 0 00-2.25-2.25H5.25A2.25 2.25 0 003 6v3" />
+                                </svg>
+                                {authenticated && address ? (
+                                    <span className="text-[10px] font-mono text-white/50">{address.slice(0, 4)}...{address.slice(-4)}</span>
+                                ) : (
+                                    <span className="text-[10px] text-white/50">Login</span>
+                                )}
+                            </button>
+                            <button
                                 onClick={() => setIsSettingsOpen(true)}
                                 className="text-white/40 hover:text-white/80 transition-colors p-1.5 rounded-md hover:bg-white/5"
                                 title="Settings (Ctrl+,)"
@@ -482,9 +500,15 @@ export default function App() {
             </div>
 
             {/* Settings Modal */}
-            <SettingsModal 
+            <SettingsModal
                 isOpen={isSettingsOpen}
                 onClose={() => setIsSettingsOpen(false)}
+            />
+
+            {/* Wallet Panel */}
+            <WalletPanel
+                isOpen={isWalletOpen}
+                onClose={() => setIsWalletOpen(false)}
             />
         </div>
     );

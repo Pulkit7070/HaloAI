@@ -3,7 +3,7 @@ import { useAuth } from '../hooks/useAuth';
 import { useWallet } from '../hooks/useWallet';
 import WalletSendForm from './WalletSendForm';
 
-type TabId = 'wallet' | 'trade';
+type TabId = 'wallet' | 'trade' | 'vault';
 
 interface WalletPanelProps {
     isOpen: boolean;
@@ -17,10 +17,15 @@ export default function WalletPanel({ isOpen, onClose }: WalletPanelProps) {
         initWallet, send, refresh, resetSendState,
         tradeState, hasTrustline, trustlineLoading,
         checkUsdcTrustline, enableTrustline, fetchQuote, swap, resetTradeState,
+        vaultBalance, vaultLoading, vaultState,
+        refreshVaultBalance, depositToVault, withdrawFromVault, lockInVault, resetVaultState,
     } = useWallet();
     const [copied, setCopied] = useState(false);
     const [activeTab, setActiveTab] = useState<TabId>('wallet');
     const [swapAmount, setSwapAmount] = useState('');
+    const [vaultAmount, setVaultAmount] = useState('');
+    const [lockAmount, setLockAmount] = useState('');
+    const [lockExpiry, setLockExpiry] = useState('');
 
     type TxFilter = 'all' | 'payments' | 'trades';
     const [txFilter, setTxFilter] = useState<TxFilter>('all');
@@ -38,6 +43,13 @@ export default function WalletPanel({ isOpen, onClose }: WalletPanelProps) {
             checkUsdcTrustline();
         }
     }, [activeTab, address, hasTrustline, checkUsdcTrustline]);
+
+    // Fetch vault balance when Vault tab opens
+    useEffect(() => {
+        if (activeTab === 'vault' && address && vaultBalance === null) {
+            refreshVaultBalance();
+        }
+    }, [activeTab, address, vaultBalance, refreshVaultBalance]);
 
     if (!isOpen) return null;
 
@@ -132,7 +144,7 @@ export default function WalletPanel({ isOpen, onClose }: WalletPanelProps) {
                 {/* Tab bar — only show when wallet exists */}
                 {ready && authenticated && address && (
                     <div className="flex gap-1 mb-4 p-0.5 bg-white/[0.03] rounded-lg border border-white/[0.06]">
-                        {(['wallet', 'trade'] as TabId[]).map(tab => (
+                        {(['wallet', 'trade', 'vault'] as TabId[]).map(tab => (
                             <button
                                 key={tab}
                                 onClick={() => setActiveTab(tab)}
@@ -144,7 +156,7 @@ export default function WalletPanel({ isOpen, onClose }: WalletPanelProps) {
                                 style={{ pointerEvents: 'auto', WebkitAppRegion: 'no-drag' } as any}
                                 type="button"
                             >
-                                {tab === 'wallet' ? 'Wallet' : 'Trade'}
+                                {tab === 'wallet' ? 'Wallet' : tab === 'trade' ? 'Trade' : 'Vault'}
                             </button>
                         ))}
                     </div>
@@ -521,6 +533,174 @@ export default function WalletPanel({ isOpen, onClose }: WalletPanelProps) {
                                     </div>
                                 </>
                             )}
+                        </div>
+                    )}
+
+                    {/* Vault tab */}
+                    {ready && authenticated && address && activeTab === 'vault' && (
+                        <div className="space-y-4">
+                            {/* Vault balance card */}
+                            <div className="p-4 bg-white/[0.03] rounded-xl border border-white/[0.06]">
+                                <div className="flex items-start justify-between">
+                                    <div>
+                                        <span className="text-xs text-white/40 font-light block mb-1">Vault Balance</span>
+                                        <span className="text-2xl text-white/95 font-semibold tracking-tight">
+                                            {vaultLoading ? '...' : vaultBalance ? parseFloat(vaultBalance).toFixed(2) : '0.00'}
+                                        </span>
+                                        <span className="text-sm text-white/40 ml-1.5">XLM</span>
+                                    </div>
+                                    <button
+                                        onClick={refreshVaultBalance}
+                                        disabled={vaultLoading}
+                                        className="text-white/30 hover:text-white/70 transition-colors p-1.5 rounded-md hover:bg-white/5"
+                                        title="Refresh vault balance"
+                                        type="button"
+                                        style={{ pointerEvents: 'auto', WebkitAppRegion: 'no-drag' } as any}
+                                    >
+                                        <svg className={`w-3.5 h-3.5 ${vaultLoading ? 'animate-spin' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                                        </svg>
+                                    </button>
+                                </div>
+                            </div>
+
+                            {/* Deposit / Withdraw */}
+                            <div className="p-4 bg-white/[0.03] rounded-xl border border-white/[0.06] space-y-3">
+                                <label className="block text-xs font-medium text-white/60">Deposit / Withdraw XLM</label>
+                                <input
+                                    type="number"
+                                    min="0"
+                                    step="any"
+                                    placeholder="Amount XLM"
+                                    value={vaultAmount}
+                                    onChange={e => {
+                                        setVaultAmount(e.target.value);
+                                        if (vaultState.status !== 'idle') resetVaultState();
+                                    }}
+                                    className="w-full bg-white/5 border border-white/[0.08] rounded-lg px-3 py-2 text-sm text-white/90 placeholder:text-white/20 outline-none focus:border-white/20 transition-colors"
+                                    style={{ pointerEvents: 'auto', WebkitAppRegion: 'no-drag' } as any}
+                                />
+                                <div className="flex gap-2">
+                                    <button
+                                        onClick={() => {
+                                            if (vaultAmount && parseFloat(vaultAmount) > 0) depositToVault(vaultAmount);
+                                        }}
+                                        disabled={!vaultAmount || parseFloat(vaultAmount) <= 0 || vaultState.status === 'loading'}
+                                        className="flex-1 px-3 py-2.5 bg-emerald-500/20 text-emerald-200 rounded-lg text-xs font-medium hover:bg-emerald-500/30 disabled:opacity-30 disabled:cursor-not-allowed transition-all"
+                                        style={{ pointerEvents: 'auto', WebkitAppRegion: 'no-drag' } as any}
+                                        type="button"
+                                    >
+                                        Deposit
+                                    </button>
+                                    <button
+                                        onClick={() => {
+                                            if (vaultAmount && parseFloat(vaultAmount) > 0) withdrawFromVault(vaultAmount);
+                                        }}
+                                        disabled={!vaultAmount || parseFloat(vaultAmount) <= 0 || vaultState.status === 'loading'}
+                                        className="flex-1 px-3 py-2.5 bg-orange-500/20 text-orange-200 rounded-lg text-xs font-medium hover:bg-orange-500/30 disabled:opacity-30 disabled:cursor-not-allowed transition-all"
+                                        style={{ pointerEvents: 'auto', WebkitAppRegion: 'no-drag' } as any}
+                                        type="button"
+                                    >
+                                        Withdraw
+                                    </button>
+                                </div>
+                            </div>
+
+                            {/* Lock funds */}
+                            <div className="p-4 bg-white/[0.03] rounded-xl border border-white/[0.06] space-y-3">
+                                <label className="block text-xs font-medium text-white/60">Lock Funds (Escrow)</label>
+                                <input
+                                    type="number"
+                                    min="0"
+                                    step="any"
+                                    placeholder="Amount XLM to lock"
+                                    value={lockAmount}
+                                    onChange={e => {
+                                        setLockAmount(e.target.value);
+                                        if (vaultState.status !== 'idle') resetVaultState();
+                                    }}
+                                    className="w-full bg-white/5 border border-white/[0.08] rounded-lg px-3 py-2 text-sm text-white/90 placeholder:text-white/20 outline-none focus:border-white/20 transition-colors"
+                                    style={{ pointerEvents: 'auto', WebkitAppRegion: 'no-drag' } as any}
+                                />
+                                <input
+                                    type="number"
+                                    min="0"
+                                    step="1"
+                                    placeholder="Expires at ledger (e.g. 9999999)"
+                                    value={lockExpiry}
+                                    onChange={e => {
+                                        setLockExpiry(e.target.value);
+                                        if (vaultState.status !== 'idle') resetVaultState();
+                                    }}
+                                    className="w-full bg-white/5 border border-white/[0.08] rounded-lg px-3 py-2 text-sm text-white/90 placeholder:text-white/20 outline-none focus:border-white/20 transition-colors"
+                                    style={{ pointerEvents: 'auto', WebkitAppRegion: 'no-drag' } as any}
+                                />
+                                <button
+                                    onClick={() => {
+                                        if (lockAmount && lockExpiry && parseFloat(lockAmount) > 0 && parseInt(lockExpiry) > 0) {
+                                            lockInVault(lockAmount, parseInt(lockExpiry));
+                                        }
+                                    }}
+                                    disabled={!lockAmount || !lockExpiry || parseFloat(lockAmount) <= 0 || parseInt(lockExpiry) <= 0 || vaultState.status === 'loading'}
+                                    className="w-full px-3 py-2.5 bg-purple-500/20 text-purple-200 rounded-lg text-xs font-medium hover:bg-purple-500/30 disabled:opacity-30 disabled:cursor-not-allowed transition-all"
+                                    style={{ pointerEvents: 'auto', WebkitAppRegion: 'no-drag' } as any}
+                                    type="button"
+                                >
+                                    Lock Funds
+                                </button>
+                            </div>
+
+                            {/* Loading */}
+                            {vaultState.status === 'loading' && (
+                                <div className="flex items-center justify-center gap-2 py-3">
+                                    <div className="w-4 h-4 border-2 border-white/20 border-t-white/60 rounded-full animate-spin" />
+                                    <span className="text-xs text-white/50">Processing...</span>
+                                </div>
+                            )}
+
+                            {/* Success */}
+                            {vaultState.status === 'success' && (
+                                <div className="p-3 bg-emerald-500/5 border border-emerald-500/10 rounded-lg space-y-2">
+                                    <p className="text-emerald-300 text-xs font-medium">
+                                        {vaultState.lockId !== undefined ? `Locked! Lock ID: ${vaultState.lockId}` : 'Transaction successful!'}
+                                    </p>
+                                    <button
+                                        onClick={() => { resetVaultState(); setVaultAmount(''); setLockAmount(''); setLockExpiry(''); }}
+                                        className="w-full mt-1 px-3 py-2 bg-white/5 text-white/60 rounded-lg text-xs hover:bg-white/10 transition-all"
+                                        style={{ pointerEvents: 'auto', WebkitAppRegion: 'no-drag' } as any}
+                                        type="button"
+                                    >
+                                        Done
+                                    </button>
+                                </div>
+                            )}
+
+                            {/* Error */}
+                            {vaultState.status === 'error' && (
+                                <div className="p-3 bg-red-500/5 border border-red-500/10 rounded-lg">
+                                    <p className="text-red-300 text-xs">{vaultState.error}</p>
+                                    <button
+                                        onClick={resetVaultState}
+                                        className="mt-2 text-[11px] text-white/40 hover:text-white/60 underline"
+                                        style={{ pointerEvents: 'auto', WebkitAppRegion: 'no-drag' } as any}
+                                        type="button"
+                                    >
+                                        Try again
+                                    </button>
+                                </div>
+                            )}
+
+                            {/* Sign Out */}
+                            <div className="flex justify-center pt-1 pb-1">
+                                <button
+                                    onClick={logout}
+                                    className="force-clickable text-xs text-white/20 hover:text-white/50 transition-colors"
+                                    style={{ pointerEvents: 'auto', cursor: 'pointer', WebkitAppRegion: 'no-drag' } as any}
+                                    type="button"
+                                >
+                                    Sign Out
+                                </button>
+                            </div>
                         </div>
                     )}
                 </div>

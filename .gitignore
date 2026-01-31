@@ -38,3 +38,6 @@ release/
 
 # Test files
 test-*.js
+
+# SQLite database
+*.db

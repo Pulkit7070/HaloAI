@@ -1,22 +1,45 @@
-import electron from 'electron';
-const { app, BrowserWindow, globalShortcut, ipcMain, Tray, Menu, nativeImage, desktopCapturer, screen, shell } = electron;
+import { app, BrowserWindow, globalShortcut, ipcMain, Tray, Menu, nativeImage, desktopCapturer, screen } from 'electron';
 import path from 'path';
-import { fileURLToPath } from 'url';
-import Store from 'electron-store';
+import fs from 'fs';
 
-const __dirname = path.dirname(fileURLToPath(import.meta.url));
+// Simple JSON file store (replaces electron-store to avoid pnpm/Electron compatibility issues)
+class SimpleStore {
+    private data: Record<string, unknown>;
+    private filePath: string;
+
+    constructor(opts: { defaults?: Record<string, unknown> } = {}) {
+        this.filePath = path.join(app.getPath('userData'), 'config.json');
+        try {
+            this.data = JSON.parse(fs.readFileSync(this.filePath, 'utf-8'));
+        } catch {
+            this.data = {};
+        }
+        if (opts.defaults) {
+            for (const [key, value] of Object.entries(opts.defaults)) {
+                if (!(key in this.data)) {
+                    this.data[key] = value;
+                }
+            }
+        }
+    }
+
+    get(key: string, defaultValue?: unknown): unknown {
+        return key in this.data ? this.data[key] : defaultValue;
+    }
+
+    set(key: string, value: unknown): void {
+        this.data[key] = value;
+        fs.writeFileSync(this.filePath, JSON.stringify(this.data, null, 2));
+    }
+}
 
 // Platform-aware default shortcut
 // macOS: Option+Space conflicts with input source switching, use Cmd+Shift+Space
 // Windows/Linux: Alt+Space
 const DEFAULT_KEYBINDING = process.platform === 'darwin' ? 'Command+Shift+Space' : 'Ctrl+Space';
 
-// Settings store with schema
-const store = new Store({
-    defaults: {
-        keybinding: DEFAULT_KEYBINDING
-    }
-});
+// Store is initialized lazily after app is ready
+let store: SimpleStore;
 
 let mainWindow: BrowserWindow | null = null;
 let tray: Tray | null = null;
@@ -73,20 +96,37 @@ function createWindow() {
 }
 
 async function showWindow() {
-    // Capture screenshot BEFORE showing window (to capture what's underneath)
-    let screenshotDataUrl: string | null = null;
-    
-    if (mainWindow) {
+    if (!mainWindow) return;
+
+    try {
+        // Center on screen and show window FIRST (don't block on screenshot)
+        const primaryDisplay = screen.getPrimaryDisplay();
+        const { width, height } = primaryDisplay.workAreaSize;
+
+        mainWindow.setSize(600, 400);
+        mainWindow.setPosition(
+            Math.round((width - 600) / 2),
+            Math.round((height - 400) / 3)
+        );
+
+        mainWindow.show();
+        mainWindow.focus();
+        isVisible = true;
+
+        console.log('[Main] Window shown and focused');
+
+        // Capture screenshot AFTER showing window (asynchronously, don't block)
+        let screenshotDataUrl: string | null = null;
+
         try {
             const sources = await desktopCapturer.getSources({
                 types: ['screen'],
-                thumbnailSize: { width: 1280, height: 720 },  // Smaller size for better compatibility
+                thumbnailSize: { width: 1280, height: 720 },
             });
 
             if (sources.length > 0) {
                 const dataUrl = sources[0].thumbnail.toDataURL();
-                
-                // Verify we got actual data
+
                 if (dataUrl && dataUrl.startsWith('data:image')) {
                     console.log('[Screenshot] Captured successfully, size:', dataUrl.length);
                     screenshotDataUrl = dataUrl;
@@ -101,31 +141,20 @@ async function showWindow() {
             // Continue anyway - app works without vision
         }
 
-        // Center on screen
-        // const { screen } = require('electron');
-        // const primaryDisplay = screen.getPrimaryDisplay();
-        const primaryDisplay = screen.getPrimaryDisplay();
-        const { width, height } = primaryDisplay.workAreaSize;
-
-        mainWindow.setSize(600, 400);
-        mainWindow.setPosition(
-            Math.round((width - 600) / 2),
-            Math.round((height - 400) / 3)
-        );
-
-        mainWindow.show();
-        mainWindow.focus();
-        isVisible = true;
-        
-        // Signal window shown (resets UI) BEFORE sending the new screenshot
-        // Pass boolean indicating if a screenshot was successfully captured and will be sent shortly
+        // Signal window shown (resets UI)
         mainWindow.webContents.send('window-shown', !!screenshotDataUrl);
 
-        // Send the pre-captured screenshot if available
+        // Send the screenshot if available
         if (screenshotDataUrl) {
             console.log('[Screenshot] Sending captured screenshot to renderer');
             mainWindow.webContents.send('auto-screenshot-captured', screenshotDataUrl);
         }
+    } catch (error) {
+        console.error('[Main] showWindow error:', error);
+        // Still try to show the window even if there's an error
+        mainWindow.show();
+        mainWindow.focus();
+        isVisible = true;
     }
 }
 
@@ -185,7 +214,7 @@ function registerHotkeys() {
 
     // Register the custom keybinding from store
     const keybinding = store.get('keybinding', DEFAULT_KEYBINDING) as string;
-    
+
     try {
         const success = globalShortcut.register(keybinding, () => {
             if (isVisible) {
@@ -194,7 +223,7 @@ function registerHotkeys() {
                 showWindow();
             }
         });
-        
+
         if (!success) {
             console.error(`Failed to register global shortcut: ${keybinding}`);
         } else {
@@ -215,12 +244,12 @@ function registerHotkeys() {
 function updateKeybinding(newKeybinding: string): boolean {
     // Get the old keybinding
     const oldKeybinding = store.get('keybinding', DEFAULT_KEYBINDING) as string;
-    
+
     // Unregister the old one
     if (oldKeybinding) {
         globalShortcut.unregister(oldKeybinding);
     }
-    
+
     // Register the new one
     try {
         const success = globalShortcut.register(newKeybinding, () => {
@@ -230,7 +259,7 @@ function updateKeybinding(newKeybinding: string): boolean {
                 showWindow();
             }
         });
-        
+
         if (success) {
             // Save to store only if registration was successful
             store.set('keybinding', newKeybinding);
@@ -275,12 +304,12 @@ function setupIPC() {
     ipcMain.handle('capture-screenshot', async () => {
         const startTime = Date.now();
         console.log('[Screenshot] ========== Starting capture ==========');
-        
+
         // Save initial window state
         const wasVisible = isVisible;
         const maxRetries = 3;
         let lastError: Error | null = null;
-        
+
         try {
             // CRITICAL: Hide window before capture to avoid capturing the HaloAI window itself
             // This significantly improves capture reliability on Windows 11
@@ -288,25 +317,25 @@ function setupIPC() {
                 console.log('[Screenshot] Hiding window for clean capture...');
                 mainWindow.hide();
                 isVisible = false; // Update state immediately
-                
+
                 // Increased delay to 500ms for Windows 11 reliability (especially with multiple GPUs)
                 // This gives the OS compositor enough time to fully hide the window
                 await new Promise(resolve => setTimeout(resolve, 500));
                 console.log('[Screenshot] Window hidden, proceeding with capture');
             }
-            
+
             // Retry loop for improved reliability
             for (let attempt = 1; attempt <= maxRetries; attempt++) {
                 try {
                     console.log(`[Screenshot] Attempt ${attempt}/${maxRetries}`);
                     const attemptStart = Date.now();
-                    
+
                     // Request screen sources from OS
                     const sourcesPromise = desktopCapturer.getSources({
                         types: ['screen'],
                         thumbnailSize: { width: 1280, height: 720 },
                     });
-                    
+
                     // 5 second timeout per attempt (increased from 4s)
                     const timeoutPromise = new Promise<Electron.DesktopCapturerSource[]>((_, reject) => {
                         setTimeout(() => reject(new Error(`Timeout after 5000ms on attempt ${attempt}`)), 5000);
@@ -314,31 +343,31 @@ function setupIPC() {
 
                     const sources = await Promise.race([sourcesPromise, timeoutPromise]);
                     const attemptDuration = Date.now() - attemptStart;
-                    
+
                     console.log(`[Screenshot] Attempt ${attempt} completed in ${attemptDuration}ms`);
 
                     if (sources && sources.length > 0) {
                         const result = sources[0].thumbnail.toDataURL();
                         const totalDuration = Date.now() - startTime;
-                        
+
                         console.log(`[Screenshot] ✓ Capture successful! Total time: ${totalDuration}ms`);
                         console.log(`[Screenshot] Data URL length: ${result.length} bytes`);
                         return result;
                     } else {
                         console.warn(`[Screenshot] Attempt ${attempt}: No screen sources found`);
                         lastError = new Error('No screen sources available');
-                        
+
                         // Don't retry if no sources found - it won't help
                         if (attempt < maxRetries) {
                             console.log('[Screenshot] Retrying in 500ms...');
                             await new Promise(resolve => setTimeout(resolve, 500));
                         }
                     }
-                    
+
                 } catch (attemptError) {
                     lastError = attemptError instanceof Error ? attemptError : new Error(String(attemptError));
                     console.error(`[Screenshot] Attempt ${attempt} failed:`, lastError.message);
-                    
+
                     // Only retry if we haven't exhausted attempts
                     if (attempt < maxRetries) {
                         console.log(`[Screenshot] Retrying... (${maxRetries - attempt} attempts remaining)`);
@@ -346,15 +375,15 @@ function setupIPC() {
                     }
                 }
             }
-            
+
             // All retries exhausted
             const totalDuration = Date.now() - startTime;
             console.error(`[Screenshot] ✗ All ${maxRetries} attempts failed after ${totalDuration}ms`);
             console.error(`[Screenshot] Last error:`, lastError?.message || 'Unknown error');
             console.error(`[Screenshot] This may be due to Windows GPU configuration. See: https://github.com/electron/electron/issues/16196`);
-            
+
             return null;
-            
+
         } catch (error) {
             const totalDuration = Date.now() - startTime;
             console.error(`[Screenshot] ✗ Unexpected error after ${totalDuration}ms:`, error);
@@ -423,6 +452,9 @@ app.on('open-url', (_event, url) => {
 
 // App lifecycle
 app.whenReady().then(() => {
+    store = new SimpleStore({
+        defaults: { keybinding: DEFAULT_KEYBINDING }
+    });
     createWindow();
     showWindow();
     createTray();
@@ -443,9 +475,11 @@ app.whenReady().then(() => {
 });
 
 app.on('window-all-closed', () => {
-    if (process.platform !== 'darwin') {
-        app.quit();
-    }
+    // Don't quit the app when window is closed/hidden
+    // The app should stay running in the system tray
+    // if (process.platform !== 'darwin') {
+    //     app.quit();
+    // }
 });
 
 // Single instance lock

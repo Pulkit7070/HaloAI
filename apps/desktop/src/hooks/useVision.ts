@@ -10,13 +10,13 @@ export function useVision() {
     const analyzeWithOCR = useCallback(async (screenshotDataUrl: string): Promise<string> => {
         try {
             console.log('[Vision] Falling back to OCR (Tesseract)...');
-            
+
             const worker = await createWorker('eng');
             const { data } = await worker.recognize(screenshotDataUrl);
             await worker.terminate();
-            
+
             const extractedText = data.text.trim();
-            
+
             if (extractedText) {
                 console.log('[Vision] OCR extracted', extractedText.length, 'characters');
                 return `Screen text extracted via OCR:\n\n${extractedText}`;
@@ -25,7 +25,11 @@ export function useVision() {
                 return '[Screenshot captured but no text could be extracted]';
             }
         } catch (error) {
+            // Never throw - always return safe fallback
             console.error('[Vision] OCR error:', error);
+            if (error instanceof Error) {
+                console.error('[Vision] OCR error message:', error.message);
+            }
             return '[Screenshot captured but OCR failed]';
         }
     }, []);
@@ -49,7 +53,7 @@ export function useVision() {
                 headers: {
                     'Content-Type': 'application/json',
                     'Authorization': `Bearer ${apiKey}`,
-                   'HTTP-Referer': 'https://haloai.app',
+                    'HTTP-Referer': 'https://haloai.app',
                     'X-Title': 'HaloAI',
                 },
                 signal: controller.signal,
@@ -87,13 +91,13 @@ Be specific and thorough.`
 
             if (!response.ok) {
                 const errorText = await response.text();
-                
+
                 // Check if rate limited
                 if (response.status === 429) {
                     console.warn('[Vision] OpenRouter rate-limited (429), falling back to OCR');
                     return null; // Signal to use OCR fallback
                 }
-                
+
                 console.error('[Vision] OpenRouter error:', response.status, errorText);
                 return null; // Signal to use OCR fallback
             }
@@ -105,14 +109,18 @@ Be specific and thorough.`
                 console.log('[Vision] OpenRouter success:', visionDescription.slice(0, 100) + '...');
                 return visionDescription;
             }
-            
+
             return null;
 
         } catch (error) {
+            // Never throw - always return null to trigger OCR fallback
             if (error instanceof Error && error.name === 'AbortError') {
                 console.warn('[Vision] OpenRouter request timed out after 15s');
             } else {
                 console.error('[Vision] OpenRouter network error:', error);
+                if (error instanceof Error) {
+                    console.error('[Vision] OpenRouter error message:', error.message);
+                }
             }
             return null; // Signal to use OCR fallback
         }
@@ -124,19 +132,21 @@ Be specific and thorough.`
         try {
             // Try OpenRouter visual model first
             const openRouterResult = await analyzeWithOpenRouter(screenshotDataUrl);
-            
+
             if (openRouterResult) {
                 return openRouterResult;
             }
-            
+
             // OpenRouter failed or rate-limited, fall back to OCR
             const ocrResult = await analyzeWithOCR(screenshotDataUrl);
             return ocrResult;
 
         } catch (error) {
+            // Never throw - always return safe fallback message
             console.error('[Vision] Error analyzing screenshot:', error);
             if (error instanceof Error) {
                 console.error('[Vision] Error message:', error.message);
+                console.error('[Vision] Error stack:', error.stack);
             }
             return '[Vision analysis failed - proceeding without visual context]';
         } finally {

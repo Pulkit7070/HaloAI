@@ -79,12 +79,14 @@ export function useVoiceInput(options: UseVoiceInputOptions = {}) {
                             options.onTranscript?.(transcriptText, false);
                         }
                     }
-                } catch {
-                    // Ignore parse errors
+                } catch (error) {
+                    // Never throw - ignore parse errors silently
+                    console.error('[VoiceInput] WebSocket message parse error:', error);
                 }
             };
 
-            socket.onerror = () => {
+            socket.onerror = (error) => {
+                console.error('[VoiceInput] WebSocket error:', error);
                 const errMsg = 'Voice connection error';
                 setError(errMsg);
                 options.onError?.(errMsg);
@@ -95,30 +97,38 @@ export function useVoiceInput(options: UseVoiceInputOptions = {}) {
                 setIsRecording(false);
             };
         } catch (err) {
+            // Never throw - always set error state
             const errMsg = err instanceof Error ? err.message : 'Microphone access denied';
+            console.error('[VoiceInput] startRecording error:', errMsg);
             setError(errMsg);
             options.onError?.(errMsg);
         }
     }, [options]);
 
     const stopRecording = useCallback(() => {
-        // Stop MediaRecorder
-        if (mediaRecorderRef.current?.state !== 'inactive') {
-            mediaRecorderRef.current?.stop();
+        try {
+            // Stop MediaRecorder
+            if (mediaRecorderRef.current?.state !== 'inactive') {
+                mediaRecorderRef.current?.stop();
+            }
+            mediaRecorderRef.current = null;
+
+            // Close WebSocket
+            if (socketRef.current?.readyState === WebSocket.OPEN) {
+                socketRef.current.close();
+            }
+            socketRef.current = null;
+
+            // Stop media stream
+            streamRef.current?.getTracks().forEach((track) => track.stop());
+            streamRef.current = null;
+
+            setIsRecording(false);
+        } catch (error) {
+            // Never throw - log and continue
+            console.error('[VoiceInput] stopRecording error:', error);
+            setIsRecording(false);
         }
-        mediaRecorderRef.current = null;
-
-        // Close WebSocket
-        if (socketRef.current?.readyState === WebSocket.OPEN) {
-            socketRef.current.close();
-        }
-        socketRef.current = null;
-
-        // Stop media stream
-        streamRef.current?.getTracks().forEach((track) => track.stop());
-        streamRef.current = null;
-
-        setIsRecording(false);
     }, []);
 
     const toggleRecording = useCallback(() => {

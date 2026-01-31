@@ -113,9 +113,16 @@ export function useAI() {
                 return data.choices?.[0]?.message?.content || 'No response generated';
             }
         } catch (err) {
+            // Never throw to React tree - set error state and return fallback
             const message = err instanceof Error ? err.message : 'Unknown error';
+            console.error('[useAI] chat error:', message);
+            if (err instanceof Error) {
+                console.error('[useAI] error stack:', err.stack);
+            }
             setError(message);
-            throw err;
+
+            // Return a user-friendly error message instead of throwing
+            return '❌ Sorry, I encountered an error while processing your request. Please try again.';
         } finally {
             setIsLoading(false);
         }
@@ -130,13 +137,13 @@ export function buildUserMessage(text: string, screenshot?: string): Message {
         return {
             role: 'user',
             content: [
-                { 
-                    type: 'text', 
-                    text: text || 'Analyze what you see on this screen and help me.' 
+                {
+                    type: 'text',
+                    text: text || 'Analyze what you see on this screen and help me.'
                 },
-                { 
-                    type: 'image_url', 
-                    image_url: { url: screenshot } 
+                {
+                    type: 'image_url',
+                    image_url: { url: screenshot }
                 }
             ]
         };
@@ -150,8 +157,8 @@ function detectContextType(
     hasScreenshot: boolean
 ): 'coding' | 'writing' | 'email' | 'transfer' | 'balance' | 'history' | 'asset_discovery' | 'trustline' | 'price_info' | 'safety_warning' | 'examples' | 'advanced_mode' | 'general' {
     const lastMessage = messages[messages.length - 1];
-    const lastMessageText = typeof lastMessage?.content === 'string' 
-        ? lastMessage.content.toLowerCase() 
+    const lastMessageText = typeof lastMessage?.content === 'string'
+        ? lastMessage.content.toLowerCase()
         : (lastMessage?.content as MessageContent[])?.find(c => c.type === 'text')?.text?.toLowerCase() || '';
     const combinedText = lastMessageText;
 
@@ -259,9 +266,9 @@ Always prioritize clarity, correctness, and transaction safety.
 - Use bullet points for lists
 - Avoid long unbroken text blocks
 - Keep responses container-friendly (no overflow)`;
-    
+
     // CRITICAL: If vision context exists, make it CLEAR that you have the screen content
-    const visionSection = visionContext 
+    const visionSection = visionContext
         ? `\n\n━━━ SCREEN CONTEXT (AUTO-CAPTURED) ━━━\n${visionContext}\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n✅ You HAVE the user's screen context above. DO NOT ask them to upload screenshots or paste code/text.\n✅ Reference specific details from the screen context in your response.\n✅ If something is unclear in the context, state what's missing and ask ONE specific question.`
         : '\n\n⚠️ No screen context captured this time.\n\n❌ NEVER say "I cannot see your screen" or "I do not have access to your screen"\n❌ NEVER ask user to "paste the text" or "upload a screenshot"\n✅ INSTEAD say: "Could you describe what you\'re working on?" or "What specific part needs help?"\n\nThe app auto-captures screens. If context is missing, ask about their task, NOT for manual uploads.';
 
@@ -309,7 +316,7 @@ Always prioritize clarity, correctness, and transaction safety.
     "type": "balance"
 }
 \`\`\``;
-            
+
         case 'history':
             return `${basePrompt}
 

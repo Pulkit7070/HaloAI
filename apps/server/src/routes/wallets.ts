@@ -49,6 +49,10 @@ console.log(`[Wallets] Connected to Supabase at ${supabaseUrl}`);
 const HORIZON_URL = 'https://horizon-testnet.stellar.org';
 const horizon = new StellarSdk.Horizon.Server(HORIZON_URL);
 
+// USDC on testnet
+const USDC_ISSUER = 'GBBD47IF6LWK7P7MDEVSCWR7DPUWV3NY3DTQEVFL4NAT4AQH3ZLLFLA5';
+const USDC_ASSET = new StellarSdk.Asset('USDC', USDC_ISSUER);
+
 // POST /api/wallets — create or return existing wallet
 router.post('/', async (req: Request, res: Response) => {
     try {
@@ -62,6 +66,7 @@ router.post('/', async (req: Request, res: Response) => {
             .from('wallets')
             .select('*')
             .eq('privy_user_id', privyUserId)
+            .limit(1)
             .maybeSingle();
 
         if (existing) {
@@ -110,6 +115,7 @@ router.get('/:userId', async (req: Request, res: Response) => {
             .from('wallets')
             .select('*')
             .eq('privy_user_id', userId)
+            .limit(1)
             .maybeSingle();
 
         if (!wallet) {
@@ -138,6 +144,7 @@ router.post('/:userId/send', async (req: Request, res: Response) => {
             .from('wallets')
             .select('*')
             .eq('privy_user_id', userId)
+            .limit(1)
             .maybeSingle();
 
         if (!wallet) {
@@ -181,6 +188,7 @@ router.get('/:userId/transactions', async (req: Request, res: Response) => {
             .from('wallets')
             .select('*')
             .eq('privy_user_id', userId)
+            .limit(1)
             .maybeSingle();
 
         if (!wallet) {
@@ -226,6 +234,170 @@ router.get('/:userId/transactions', async (req: Request, res: Response) => {
     } catch (err: any) {
         console.error('[Wallets] Transactions error:', err.message);
         return res.json({ transactions: [] });
+    }
+});
+
+// GET /api/wallets/:userId/trustlines — check USDC trustline
+router.get('/:userId/trustlines', async (req: Request, res: Response) => {
+    try {
+        const { userId } = req.params;
+        const { data: wallet } = await supabase
+            .from('wallets')
+            .select('*')
+            .eq('privy_user_id', userId)
+            .limit(1)
+            .maybeSingle();
+
+        if (!wallet) {
+            return res.status(404).json({ error: 'Wallet not found' });
+        }
+
+        const account = await horizon.loadAccount(wallet.public_key);
+        const hasTrustline = account.balances.some(
+            (b: any) => b.asset_type === 'credit_alphanum4' && b.asset_code === 'USDC' && b.asset_issuer === USDC_ISSUER
+        );
+        return res.json({ hasTrustline, balances: account.balances });
+    } catch (err: any) {
+        console.error('[Wallets] Trustline check error:', err.message);
+        return res.status(500).json({ error: 'Failed to check trustlines' });
+    }
+});
+
+// POST /api/wallets/:userId/trustline — add USDC trustline
+router.post('/:userId/trustline', async (req: Request, res: Response) => {
+    try {
+        const { userId } = req.params;
+        const { data: wallet } = await supabase
+            .from('wallets')
+            .select('*')
+            .eq('privy_user_id', userId)
+            .limit(1)
+            .maybeSingle();
+
+        if (!wallet) {
+            return res.status(404).json({ error: 'Wallet not found' });
+        }
+
+        const secretKey = decrypt(wallet.encrypted_secret);
+        const sourceKeypair = StellarSdk.Keypair.fromSecret(secretKey);
+        const account = await horizon.loadAccount(wallet.public_key);
+
+        const tx = new StellarSdk.TransactionBuilder(account, {
+            fee: StellarSdk.BASE_FEE,
+            networkPassphrase: StellarSdk.Networks.TESTNET,
+        })
+            .addOperation(StellarSdk.Operation.changeTrust({ asset: USDC_ASSET }))
+            .setTimeout(30)
+            .build();
+
+        tx.sign(sourceKeypair);
+        const result = await horizon.submitTransaction(tx);
+
+        return res.json({ txHash: result.hash, success: true });
+    } catch (err: any) {
+        console.error('[Wallets] Trustline add error:', err.message);
+        return res.status(500).json({ error: 'Failed to add USDC trustline' });
+    }
+});
+
+// GET /api/wallets/:userId/swap-quote — get XLM→USDC quote
+router.get('/:userId/swap-quote', async (req: Request, res: Response) => {
+    try {
+        const { userId } = req.params;
+        const { amount } = req.query;
+
+        if (!amount || isNaN(Number(amount)) || Number(amount) <= 0) {
+            return res.status(400).json({ error: 'Valid amount is required' });
+        }
+
+        const { data: wallet } = await supabase
+            .from('wallets')
+            .select('*')
+            .eq('privy_user_id', userId)
+            .limit(1)
+            .maybeSingle();
+
+        if (!wallet) {
+            return res.status(404).json({ error: 'Wallet not found' });
+        }
+
+        const paths = await horizon
+            .strictSendPaths(StellarSdk.Asset.native(), String(amount), [USDC_ASSET])
+            .call();
+
+        if (!paths.records || paths.records.length === 0) {
+            return res.status(404).json({ error: 'No swap path found for this amount' });
+        }
+
+        // Pick the best (highest destination_amount)
+        const best = paths.records.reduce((a: any, b: any) =>
+            parseFloat(a.destination_amount) >= parseFloat(b.destination_amount) ? a : b
+        );
+
+        return res.json({
+            destinationAmount: best.destination_amount,
+            path: best.path,
+            sourceAmount: best.source_amount,
+        });
+    } catch (err: any) {
+        console.error('[Wallets] Swap quote error:', err.message);
+        return res.status(500).json({ error: 'Failed to fetch swap quote' });
+    }
+});
+
+// POST /api/wallets/:userId/swap — execute XLM→USDC swap
+router.post('/:userId/swap', async (req: Request, res: Response) => {
+    try {
+        const { userId } = req.params;
+        const { amount, minDestAmount } = req.body;
+
+        if (!amount || !minDestAmount) {
+            return res.status(400).json({ error: 'amount and minDestAmount are required' });
+        }
+
+        const { data: wallet } = await supabase
+            .from('wallets')
+            .select('*')
+            .eq('privy_user_id', userId)
+            .limit(1)
+            .maybeSingle();
+
+        if (!wallet) {
+            return res.status(404).json({ error: 'Wallet not found' });
+        }
+
+        const secretKey = decrypt(wallet.encrypted_secret);
+        const sourceKeypair = StellarSdk.Keypair.fromSecret(secretKey);
+        const account = await horizon.loadAccount(wallet.public_key);
+
+        const tx = new StellarSdk.TransactionBuilder(account, {
+            fee: StellarSdk.BASE_FEE,
+            networkPassphrase: StellarSdk.Networks.TESTNET,
+        })
+            .addOperation(
+                StellarSdk.Operation.pathPaymentStrictSend({
+                    sendAsset: StellarSdk.Asset.native(),
+                    sendAmount: String(amount),
+                    destination: wallet.public_key, // swap to self
+                    destAsset: USDC_ASSET,
+                    destMin: String(minDestAmount),
+                    path: [], // let network find best route
+                })
+            )
+            .setTimeout(30)
+            .build();
+
+        tx.sign(sourceKeypair);
+        const result = await horizon.submitTransaction(tx);
+
+        const balance = await getBalance(wallet.public_key);
+        return res.json({ txHash: result.hash, balance });
+    } catch (err: any) {
+        console.error('[Wallets] Swap error:', err.message);
+        const msg = err?.response?.data?.extras?.result_codes
+            ? JSON.stringify(err.response.data.extras.result_codes)
+            : 'Failed to execute swap';
+        return res.status(500).json({ error: msg });
     }
 });
 

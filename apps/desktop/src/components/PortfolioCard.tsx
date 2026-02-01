@@ -42,7 +42,7 @@ export function PortfolioCard({ data }: { data: PortfolioData }) {
             <div className="p-6 text-center border-b border-white/5">
                 <p className="text-xs text-white/40 font-medium uppercase tracking-wider mb-1">Total Balance</p>
                 <div className="flex items-baseline justify-center gap-1">
-                    <span className="text-3xl font-bold text-white tracking-tight">{parseFloat(xlmBalance).toFixed(2)}</span>
+                    <span className="text-3xl font-bold text-white tracking-tight">{parseFloat(xlmBalance).toFixed(7)}</span>
                     <span className="text-sm text-cyan-400 font-medium">XLM</span>
                 </div>
                 <p className="text-[10px] text-white/30 mt-2">

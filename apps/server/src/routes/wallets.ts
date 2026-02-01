@@ -617,14 +617,14 @@ router.post('/:userId/vault/deposit', async (req: Request, res: Response) => {
         const secretKey = decrypt(wallet.encrypted_secret);
         const stroops = BigInt(Math.round(Number(amount) * 1e7));
 
-        await buildAndSubmitSoroban(wallet.public_key, secretKey, VAULT_CONTRACT_ID, 'deposit', [
+        const sorobanResult = await buildAndSubmitSoroban(wallet.public_key, secretKey, VAULT_CONTRACT_ID, 'deposit', [
             addressScVal(wallet.public_key),
             addressScVal(XLM_SAC_ID),
             nativeI128(stroops),
         ]);
 
         const balance = await getBalance(wallet.public_key);
-        return res.json({ txHash: 'ok', balance });
+        return res.json({ txHash: (sorobanResult as any).hash || 'ok', balance });
     } catch (err: any) {
         console.error('[Vault] Deposit error:', err.message);
         return res.status(500).json({ error: err.message || 'Failed to deposit into vault' });
@@ -644,14 +644,14 @@ router.post('/:userId/vault/withdraw', async (req: Request, res: Response) => {
         const secretKey = decrypt(wallet.encrypted_secret);
         const stroops = BigInt(Math.round(Number(amount) * 1e7));
 
-        await buildAndSubmitSoroban(wallet.public_key, secretKey, VAULT_CONTRACT_ID, 'withdraw', [
+        const sorobanResult = await buildAndSubmitSoroban(wallet.public_key, secretKey, VAULT_CONTRACT_ID, 'withdraw', [
             addressScVal(wallet.public_key),
             addressScVal(XLM_SAC_ID),
             nativeI128(stroops),
         ]);
 
         const balance = await getBalance(wallet.public_key);
-        return res.json({ txHash: 'ok', balance });
+        return res.json({ txHash: (sorobanResult as any).hash || 'ok', balance });
     } catch (err: any) {
         console.error('[Vault] Withdraw error:', err.message);
         return res.status(500).json({ error: err.message || 'Failed to withdraw from vault' });
@@ -682,7 +682,7 @@ router.post('/:userId/vault/lock', async (req: Request, res: Response) => {
         if (result.status === 'SUCCESS' && result.returnValue) {
             lockId = Number(StellarSdk.scValToNative(result.returnValue));
         }
-        return res.json({ txHash: 'ok', lockId });
+        return res.json({ txHash: (result as any).hash || 'ok', lockId });
     } catch (err: any) {
         console.error('[Vault] Lock error:', err.message);
         return res.status(500).json({ error: err.message || 'Failed to lock funds' });
@@ -725,13 +725,13 @@ router.post('/:userId/vault/release', async (req: Request, res: Response) => {
         if (!wallet) return res.status(404).json({ error: 'Wallet not found' });
 
         const secretKey = decrypt(wallet.encrypted_secret);
-        await buildAndSubmitSoroban(wallet.public_key, secretKey, VAULT_CONTRACT_ID, 'release', [
+        const sorobanResult = await buildAndSubmitSoroban(wallet.public_key, secretKey, VAULT_CONTRACT_ID, 'release', [
             addressScVal(wallet.public_key),
             nativeU64(Number(lockId)),
             addressScVal(recipient),
         ]);
 
-        return res.json({ txHash: 'ok' });
+        return res.json({ txHash: (sorobanResult as any).hash || 'ok' });
     } catch (err: any) {
         console.error('[Vault] Release error:', err.message);
         return res.status(500).json({ error: err.message || 'Failed to release lock' });
@@ -749,12 +749,12 @@ router.post('/:userId/vault/reclaim', async (req: Request, res: Response) => {
         if (!wallet) return res.status(404).json({ error: 'Wallet not found' });
 
         const secretKey = decrypt(wallet.encrypted_secret);
-        await buildAndSubmitSoroban(wallet.public_key, secretKey, VAULT_CONTRACT_ID, 'reclaim', [
+        const sorobanResult = await buildAndSubmitSoroban(wallet.public_key, secretKey, VAULT_CONTRACT_ID, 'reclaim', [
             addressScVal(wallet.public_key),
             nativeU64(Number(lockId)),
         ]);
 
-        return res.json({ txHash: 'ok' });
+        return res.json({ txHash: (sorobanResult as any).hash || 'ok' });
     } catch (err: any) {
         console.error('[Vault] Reclaim error:', err.message);
         return res.status(500).json({ error: err.message || 'Failed to reclaim lock' });

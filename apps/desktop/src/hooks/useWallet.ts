@@ -317,7 +317,7 @@ export function useWallet() {
             const result = await vaultDeposit(userId, amount);
             if (!mountedRef.current) return;
             setBalance(result.balance);
-            setVaultState({ status: 'success' });
+            setVaultState({ status: 'success', txHash: result.txHash });
             refreshVaultBalance();
         } catch (err: any) {
             if (!mountedRef.current) return;
@@ -332,7 +332,7 @@ export function useWallet() {
             const result = await vaultWithdraw(userId, amount);
             if (!mountedRef.current) return;
             setBalance(result.balance);
-            setVaultState({ status: 'success' });
+            setVaultState({ status: 'success', txHash: result.txHash });
             refreshVaultBalance();
         } catch (err: any) {
             if (!mountedRef.current) return;
@@ -346,7 +346,7 @@ export function useWallet() {
         try {
             const result = await vaultLock(userId, amount, expiresAtLedger);
             if (!mountedRef.current) return;
-            setVaultState({ status: 'success', lockId: result.lockId });
+            setVaultState({ status: 'success', txHash: result.txHash, lockId: result.lockId });
             refreshVaultBalance();
         } catch (err: any) {
             if (!mountedRef.current) return;

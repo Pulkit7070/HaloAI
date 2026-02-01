@@ -30,6 +30,8 @@ export default function WalletPanel({ isOpen, onClose }: WalletPanelProps) {
     const [strategyNote, setStrategyNote] = useState('');
     const [proofsCopied, setProofsCopied] = useState(false);
     const [showProofHistory, setShowProofHistory] = useState(false);
+    const [showStampInfo, setShowStampInfo] = useState(false);
+    const [expandedStampId, setExpandedStampId] = useState<number | null>(null);
     const [revealedProofIds, setRevealedProofIds] = useState<Set<number>>(new Set());
 
     type TxFilter = 'all' | 'payments' | 'trades';
@@ -239,7 +241,7 @@ export default function WalletPanel({ isOpen, onClose }: WalletPanelProps) {
                                     <div>
                                         <span className="text-xs text-white/40 font-light block mb-1">Balance</span>
                                         <span className="text-2xl text-white/95 font-semibold tracking-tight">
-                                            {balance ? parseFloat(balance).toFixed(2) : '—'}
+                                            {balance ? parseFloat(balance).toFixed(7) : '—'}
                                         </span>
                                         <span className="text-sm text-white/40 ml-1.5">XLM</span>
                                     </div>
@@ -349,7 +351,7 @@ export default function WalletPanel({ isOpen, onClose }: WalletPanelProps) {
                                                             <>
                                                                 <p className="text-[11px] text-white/70 font-medium">Trade</p>
                                                                 <p className="text-[10px] text-white/30">
-                                                                    {parseFloat(tx.sourceAmount!).toFixed(2)} {tx.sourceAsset} → {parseFloat(tx.amount).toFixed(2)} {tx.asset}
+                                                                    {parseFloat(tx.sourceAmount!).toFixed(7)} {tx.sourceAsset} → {parseFloat(tx.amount).toFixed(7)} {tx.asset}
                                                                 </p>
                                                             </>
                                                         ) : (
@@ -371,7 +373,7 @@ export default function WalletPanel({ isOpen, onClose }: WalletPanelProps) {
                                                         <p className={`text-[11px] font-medium ${
                                                             tx.type === 'sent' ? 'text-red-400/80' : 'text-emerald-400/80'
                                                         }`}>
-                                                            {tx.type === 'sent' ? '-' : '+'}{parseFloat(tx.amount).toFixed(2)} {tx.asset}
+                                                            {tx.type === 'sent' ? '-' : '+'}{parseFloat(tx.amount).toFixed(7)} {tx.asset}
                                                         </p>
                                                     )}
                                                     <p className="text-[10px] text-white/20">{formatDate(tx.date)}</p>
@@ -423,7 +425,7 @@ export default function WalletPanel({ isOpen, onClose }: WalletPanelProps) {
                                 </div>
                             ) : (
                                 <>
-                                    {/* Private Strategy Mode toggle */}
+                                    {/* Strategy Stamp toggle */}
                                     <div className="p-3 bg-white/[0.03] rounded-xl border border-white/[0.06]">
                                         <div className="flex items-center justify-between">
                                             <div className="flex items-center gap-2">
@@ -433,8 +435,16 @@ export default function WalletPanel({ isOpen, onClose }: WalletPanelProps) {
                                                     </svg>
                                                 </div>
                                                 <div>
-                                                    <p className="text-xs font-medium text-white/80">Private Strategy Mode</p>
-                                                    <p className="text-[10px] text-white/30">Only a proof hash is stored on-chain</p>
+                                                    <div className="flex items-center gap-1.5">
+                                                        <p className="text-xs font-medium text-white/80">Strategy Stamp</p>
+                                                        <button
+                                                            onClick={() => setShowStampInfo(v => !v)}
+                                                            className="text-[10px] text-white/30 hover:text-white/60 transition-colors"
+                                                            style={{ pointerEvents: 'auto', WebkitAppRegion: 'no-drag' } as any}
+                                                            type="button"
+                                                        >(?)</button>
+                                                    </div>
+                                                    <p className="text-[10px] text-white/30">Seal your trading reason before you swap — prove you planned it</p>
                                                 </div>
                                             </div>
                                             <button
@@ -450,20 +460,26 @@ export default function WalletPanel({ isOpen, onClose }: WalletPanelProps) {
                                                 }`} />
                                             </button>
                                         </div>
+                                        {showStampInfo && (
+                                            <p className="mt-2 text-[10px] text-purple-300/50 leading-relaxed">
+                                                Before your trade executes, your strategy is timestamped on the blockchain. Nobody can see it unless you choose to reveal it later. This proves you had a plan — not just luck.
+                                            </p>
+                                        )}
                                     </div>
 
-                                    {/* Strategy note input (visible when private mode ON) */}
+                                    {/* Strategy note input (visible when stamp mode ON) */}
                                     {privateMode && (
                                         <div className="p-3 bg-purple-500/[0.04] rounded-xl border border-purple-500/10 space-y-2">
-                                            <label className="block text-[11px] font-medium text-purple-300/70">Strategy Note (private — never sent to server)</label>
+                                            <label className="block text-[11px] font-medium text-purple-300/70">What's your trading reason?</label>
                                             <input
                                                 type="text"
-                                                placeholder='e.g. "buy XLM when RSI < 30"'
+                                                placeholder='e.g. "RSI is below 30, good entry point"'
                                                 value={strategyNote}
                                                 onChange={e => setStrategyNote(e.target.value)}
                                                 className="w-full bg-white/5 border border-purple-500/10 rounded-lg px-3 py-2 text-sm text-white/90 placeholder:text-white/20 outline-none focus:border-purple-500/20 transition-colors"
                                                 style={{ pointerEvents: 'auto', WebkitAppRegion: 'no-drag' } as any}
                                             />
+                                            <p className="text-[9px] text-white/25">Stays on your device. Only a fingerprint goes on-chain.</p>
                                         </div>
                                     )}
 
@@ -520,7 +536,7 @@ export default function WalletPanel({ isOpen, onClose }: WalletPanelProps) {
                                                     style={{ pointerEvents: 'auto', WebkitAppRegion: 'no-drag' } as any}
                                                     type="button"
                                                 >
-                                                    {privateMode && strategyNote.trim() ? 'Confirm Swap + Attach Proof' : 'Confirm Swap'}
+                                                    {privateMode && strategyNote.trim() ? 'Confirm Swap + Stamp Strategy' : 'Confirm Swap'}
                                                 </button>
                                             </div>
                                         )}
@@ -579,7 +595,7 @@ export default function WalletPanel({ isOpen, onClose }: WalletPanelProps) {
                                     {privateMode && proofState.status === 'loading' && (
                                         <div className="flex items-center justify-center gap-2 py-2">
                                             <div className="w-3.5 h-3.5 border-2 border-purple-400/20 border-t-purple-400/60 rounded-full animate-spin" />
-                                            <span className="text-[11px] text-purple-300/60">Attaching proof on-chain...</span>
+                                            <span className="text-[11px] text-purple-300/60">Timestamping your strategy on-chain...</span>
                                         </div>
                                     )}
 
@@ -589,14 +605,14 @@ export default function WalletPanel({ isOpen, onClose }: WalletPanelProps) {
                                                 <svg className="w-3.5 h-3.5 text-purple-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
                                                 </svg>
-                                                <span className="text-xs text-purple-300 font-medium">Proof attached</span>
+                                                <span className="text-xs text-purple-300 font-medium">Strategy stamped on-chain</span>
                                                 {proofState.proofId !== null && proofState.proofId !== undefined && (
-                                                    <span className="text-[10px] text-white/30 ml-1">ID: #{proofState.proofId}</span>
+                                                    <span className="text-[10px] text-white/30 ml-1">#{proofState.proofId}</span>
                                                 )}
                                             </div>
                                             <div className="flex items-center gap-2">
                                                 <span className="text-[10px] font-mono text-white/40 truncate">
-                                                    0x{proofState.proofHashHex.slice(0, 12)}...{proofState.proofHashHex.slice(-8)}
+                                                    Stamp ID: 0x{proofState.proofHashHex.slice(0, 12)}...{proofState.proofHashHex.slice(-8)}
                                                 </span>
                                                 <button
                                                     onClick={async () => {
@@ -611,12 +627,13 @@ export default function WalletPanel({ isOpen, onClose }: WalletPanelProps) {
                                                     {proofsCopied ? 'Copied!' : 'Copy'}
                                                 </button>
                                             </div>
+                                            <p className="text-[9px] text-purple-300/40">You can reveal your strategy later to prove your plan.</p>
                                         </div>
                                     )}
 
                                     {privateMode && proofState.status === 'error' && (
                                         <div className="p-3 bg-red-500/5 border border-red-500/10 rounded-lg">
-                                            <p className="text-red-300 text-[11px]">Proof error: {proofState.error}</p>
+                                            <p className="text-red-300 text-[11px]">Stamping failed: {proofState.error}</p>
                                             <button
                                                 onClick={resetProofState}
                                                 className="mt-1 text-[10px] text-white/40 hover:text-white/60 underline"
@@ -637,7 +654,7 @@ export default function WalletPanel({ isOpen, onClose }: WalletPanelProps) {
                                                 style={{ pointerEvents: 'auto', WebkitAppRegion: 'no-drag' } as any}
                                                 type="button"
                                             >
-                                                <span className="text-[11px] font-medium text-white/40">Recent Proofs</span>
+                                                <span className="text-[11px] font-medium text-white/40">Your Strategy Stamps</span>
                                                 <svg
                                                     className={`w-3 h-3 text-white/30 transition-transform ${showProofHistory ? 'rotate-180' : ''}`}
                                                     fill="none" stroke="currentColor" viewBox="0 0 24 24"
@@ -651,32 +668,59 @@ export default function WalletPanel({ isOpen, onClose }: WalletPanelProps) {
                                                         try {
                                                             const bundles = JSON.parse(localStorage.getItem('haloai_proof_bundles') || '{}');
                                                             const ids = Object.keys(bundles).map(Number).sort((a, b) => b - a).slice(0, 5);
-                                                            if (ids.length === 0) return <p className="text-[10px] text-white/20 py-2">No proofs yet</p>;
-                                                            return ids.map(id => (
-                                                                <div key={id} className="flex items-center justify-between p-2 bg-white/[0.02] rounded-lg">
-                                                                    <div className="flex items-center gap-2">
-                                                                        <span className="text-[10px] text-white/40">#{id}</span>
-                                                                        <span className="text-[10px] font-mono text-white/30">
-                                                                            0x{bundles[id].proofHashHex?.slice(0, 8)}...
-                                                                        </span>
-                                                                    </div>
-                                                                    {revealedProofIds.has(id) || (proofState.status === 'success' && proofState.proofId === id) ? (
-                                                                        <span className="text-[10px] text-emerald-400/60">Revealed</span>
-                                                                    ) : (
-                                                                        <button
-                                                                            onClick={() => revealTradeProof(id)}
-                                                                            disabled={proofState.status === 'loading'}
-                                                                            className="text-[10px] text-purple-400/60 hover:text-purple-400 transition-colors disabled:opacity-30"
-                                                                            style={{ pointerEvents: 'auto', WebkitAppRegion: 'no-drag' } as any}
-                                                                            type="button"
-                                                                        >
-                                                                            Reveal
-                                                                        </button>
+                                                            if (ids.length === 0) return <p className="text-[10px] text-white/20 py-2">No stamps yet</p>;
+                                                            return ids.map(id => {
+                                                                const isRevealed = revealedProofIds.has(id) || (proofState.status === 'success' && proofState.proofId === id);
+                                                                const isExpanded = expandedStampId === id;
+                                                                const bundle = bundles[id];
+                                                                return (
+                                                                <div key={id} className="bg-white/[0.02] rounded-lg overflow-hidden">
+                                                                    <button
+                                                                        onClick={() => setExpandedStampId(isExpanded ? null : id)}
+                                                                        className="w-full flex items-center justify-between p-2 hover:bg-white/[0.02] transition-colors"
+                                                                        style={{ pointerEvents: 'auto', WebkitAppRegion: 'no-drag' } as any}
+                                                                        type="button"
+                                                                    >
+                                                                        <div className="flex items-center gap-2">
+                                                                            <span className="text-[10px] text-white/40">Stamp #{id}</span>
+                                                                            <span className="text-[10px] font-mono text-white/30">
+                                                                                0x{bundle.proofHashHex?.slice(0, 8)}...
+                                                                            </span>
+                                                                        </div>
+                                                                        {isRevealed ? (
+                                                                            <span className="text-[10px] text-emerald-400/60">Revealed on-chain</span>
+                                                                        ) : (
+                                                                            <span className="text-[10px] text-purple-400/40">Tap to view</span>
+                                                                        )}
+                                                                    </button>
+                                                                    {isExpanded && (
+                                                                        <div className="px-2 pb-2 space-y-1.5">
+                                                                            <div className="p-2 bg-white/[0.02] rounded-md">
+                                                                                <p className="text-[9px] text-white/30 mb-0.5">Your reason</p>
+                                                                                <p className="text-[11px] text-white/70">{bundle.strategy || '(no strategy noted)'}</p>
+                                                                            </div>
+                                                                            <div className="p-2 bg-white/[0.02] rounded-md">
+                                                                                <p className="text-[9px] text-white/30 mb-0.5">Trade</p>
+                                                                                <p className="text-[11px] text-white/50 font-mono">{bundle.tradeParams || '—'}</p>
+                                                                            </div>
+                                                                            {!isRevealed && (
+                                                                                <button
+                                                                                    onClick={() => revealTradeProof(id)}
+                                                                                    disabled={proofState.status === 'loading'}
+                                                                                    className="w-full mt-1 px-3 py-1.5 bg-purple-500/10 text-purple-300/80 rounded-md text-[10px] font-medium hover:bg-purple-500/20 transition-all disabled:opacity-30"
+                                                                                    style={{ pointerEvents: 'auto', WebkitAppRegion: 'no-drag' } as any}
+                                                                                    type="button"
+                                                                                >
+                                                                                    {proofState.status === 'loading' ? 'Revealing...' : 'Reveal Strategy On-Chain'}
+                                                                                </button>
+                                                                            )}
+                                                                        </div>
                                                                     )}
                                                                 </div>
-                                                            ));
+                                                                );
+                                                            });
                                                         } catch {
-                                                            return <p className="text-[10px] text-white/20 py-2">No proofs yet</p>;
+                                                            return <p className="text-[10px] text-white/20 py-2">No stamps yet</p>;
                                                         }
                                                     })()}
                                                 </div>
@@ -709,7 +753,7 @@ export default function WalletPanel({ isOpen, onClose }: WalletPanelProps) {
                                     <div>
                                         <span className="text-xs text-white/40 font-light block mb-1">Vault Balance</span>
                                         <span className="text-2xl text-white/95 font-semibold tracking-tight">
-                                            {vaultLoading ? '...' : vaultBalance ? parseFloat(vaultBalance).toFixed(2) : '0.00'}
+                                            {vaultLoading ? '...' : vaultBalance ? parseFloat(vaultBalance).toFixed(7) : '0.0000000'}
                                         </span>
                                         <span className="text-sm text-white/40 ml-1.5">XLM</span>
                                     </div>

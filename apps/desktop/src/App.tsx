@@ -6,6 +6,7 @@ import WalletPanel from './components/WalletPanel';
 import { MessageBubble } from './components/MessageBubble';
 
 import { getHorizonAccount, getTransactions } from './services/walletApi';
+import { detectDevMode, extractContextSnippets, formatSnippets } from './services/devMode';
 import type { TransactionData } from './components/TransactionCard';
 import type { PortfolioData } from './components/PortfolioCard';
 import type { HistoryData } from './components/TransactionHistory';
@@ -29,6 +30,11 @@ export default function App() {
     const [isWalletOpen, setIsWalletOpen] = useState(false);
     const inputRef = useRef<HTMLTextAreaElement>(null);
     const messagesEndRef = useRef<HTMLDivElement>(null);
+    const trustlineEnablingRef = useRef(false);
+
+    const [devMode, setDevMode] = useState(false);
+    const [devModeIdeName, setDevModeIdeName] = useState<string | null>(null);
+    const [devModeManualOff, setDevModeManualOff] = useState(false);
 
     const [pendingTransaction, setPendingTransaction] = useState<{
         to: string;
@@ -36,9 +42,31 @@ export default function App() {
         asset: string;
     } | null>(null);
 
+    const [pendingTrade, setPendingTrade] = useState<{
+        amount: string;
+        fromAsset: string;
+        toAsset: string;
+        slippage: string;
+        mode: string;
+        quote?: string;
+    } | null>(null);
+
+    const [pendingVault, setPendingVault] = useState<{
+        action: 'deposit' | 'withdraw' | 'lock';
+        amount: string;
+        lockLedgers?: string;
+    } | null>(null);
+
     const { chat, isLoading } = useAI();
     const { authenticated } = useAuth();
-    const { address, balance, send, sendState, resetSendState } = useWallet();
+    const {
+        address, balance, send, sendState, resetSendState,
+        // Trade
+        tradeState, hasTrustline, trustlineLoading,
+        checkUsdcTrustline, enableTrustline, fetchQuote, swap, resetTradeState,
+        // Vault
+        vaultState, depositToVault, withdrawFromVault, lockInVault, resetVaultState,
+    } = useWallet();
     const { analyzeScreenshot, isAnalyzing } = useVision();
     const { isRecording, transcript, toggleRecording } = useVoiceInput({
         onTranscript: (text, isFinal) => {
@@ -100,6 +128,14 @@ export default function App() {
             const visionDescription = await analyzeScreenshot(dataUrl);
             setVisionContext(visionDescription);
             console.log('[HaloAI] Vision analysis complete!', visionDescription ? 'Context acquired' : 'No context');
+
+            // Dev Mode auto-detection
+            if (!devModeManualOff && visionDescription) {
+                const detection = detectDevMode(visionDescription, visionDescription);
+                setDevMode(detection.enabled);
+                setDevModeIdeName(detection.ideName || null);
+                if (detection.enabled) console.log('[HaloAI] Dev Mode activated:', detection.ideName, detection.confidence);
+            }
         };
 
         if (window.electronAPI) {
@@ -189,12 +225,23 @@ export default function App() {
                 content: typeof m.content === 'string' ? m.content : JSON.stringify(m.content),
             }));
 
+            // Inject dev mode context snippets if active
+            let enrichedVisionContext = currentVisionContext || undefined;
+            if (devMode && currentVisionContext) {
+                const snippets = extractContextSnippets(currentVisionContext);
+                const snippetStr = formatSnippets(snippets);
+                if (snippetStr) {
+                    enrichedVisionContext = `${currentVisionContext}\n\n── Dev Context Snippets ──\n${snippetStr}`;
+                }
+            }
+
             const response = await chat(
                 allMessages,
                 (chunk) => {
                     setStreamingContent((prev) => prev + chunk);
                 },
-                currentVisionContext || undefined
+                enrichedVisionContext,
+                devMode
             );
 
             // Check for transfer intent
@@ -319,6 +366,95 @@ export default function App() {
                          setStreamingContent('');
                          return;
                     }
+
+                    // Handle Trade/Swap (TradeDraft schema)
+                    if (parsedDetails.type === 'swap') {
+                        if (!address) {
+                            setMessages(prev => [...prev, { role: 'assistant', content: 'Please connect your wallet first to trade.' }]);
+                            setStreamingContent('');
+                            return;
+                        }
+
+                        const tradeAmount = parseFloat(parsedDetails.amount);
+                        const currentBalance = parseFloat(balance || '0');
+                        const reserve = 1.5;
+
+                        if (currentBalance < tradeAmount + reserve) {
+                            setMessages(prev => [...prev, {
+                                role: 'assistant',
+                                content: `Insufficient balance. You have ${currentBalance} XLM but need ${tradeAmount} XLM plus reserve.`
+                            }]);
+                            setStreamingContent('');
+                            return;
+                        }
+
+                        // Check trustline and fetch quote
+                        await checkUsdcTrustline();
+                        setPendingTrade({
+                            amount: parsedDetails.amount,
+                            fromAsset: parsedDetails.fromAsset || 'XLM',
+                            toAsset: parsedDetails.toAsset || 'USDC',
+                            slippage: parsedDetails.slippage || '1',
+                            mode: parsedDetails.mode || 'market',
+                        });
+                        setMessages(prev => [...prev, { role: 'assistant', content: 'Fetching swap quote...' }]);
+                        await fetchQuote(parsedDetails.amount);
+                        setStreamingContent('');
+                        return;
+                    }
+
+                    // Handle Vault Deposit
+                    if (parsedDetails.type === 'vault_deposit') {
+                        if (!address) {
+                            setMessages(prev => [...prev, { role: 'assistant', content: 'Please connect your wallet first.' }]);
+                            setStreamingContent('');
+                            return;
+                        }
+                        const depositAmount = parseFloat(parsedDetails.amount);
+                        const currentBalance = parseFloat(balance || '0');
+                        if (currentBalance < depositAmount + 1.5) {
+                            setMessages(prev => [...prev, {
+                                role: 'assistant',
+                                content: `Insufficient balance for deposit. You have ${currentBalance} XLM.`
+                            }]);
+                            setStreamingContent('');
+                            return;
+                        }
+                        setPendingVault({ action: 'deposit', amount: parsedDetails.amount });
+                        setMessages(prev => [...prev, { role: 'assistant', content: 'Please confirm the vault deposit.' }]);
+                        setStreamingContent('');
+                        return;
+                    }
+
+                    // Handle Vault Withdraw
+                    if (parsedDetails.type === 'vault_withdraw') {
+                        if (!address) {
+                            setMessages(prev => [...prev, { role: 'assistant', content: 'Please connect your wallet first.' }]);
+                            setStreamingContent('');
+                            return;
+                        }
+                        setPendingVault({ action: 'withdraw', amount: parsedDetails.amount });
+                        setMessages(prev => [...prev, { role: 'assistant', content: 'Please confirm the vault withdrawal.' }]);
+                        setStreamingContent('');
+                        return;
+                    }
+
+                    // Handle Vault Lock
+                    if (parsedDetails.type === 'vault_lock') {
+                        if (!address) {
+                            setMessages(prev => [...prev, { role: 'assistant', content: 'Please connect your wallet first.' }]);
+                            setStreamingContent('');
+                            return;
+                        }
+                        setPendingVault({
+                            action: 'lock',
+                            amount: parsedDetails.amount,
+                            lockLedgers: parsedDetails.lockLedgers,
+                        });
+                        setMessages(prev => [...prev, { role: 'assistant', content: 'Please confirm the vault lock.' }]);
+                        setStreamingContent('');
+                        return;
+                    }
                 }
             } catch (e) {
                 console.error('Failed to parse AI JSON', e);
@@ -395,6 +531,69 @@ export default function App() {
         }
     }, [sendState, resetSendState]);
 
+    // Effect: when trade quote arrives, update pendingTrade with quote
+    // Depends on primitives (status, quote string) to avoid object-reference rerenders
+    useEffect(() => {
+        if (tradeState.status === 'quoted' && tradeState.quote && pendingTrade && !pendingTrade.quote) {
+            setPendingTrade(prev => prev ? { ...prev, quote: tradeState.quote } : null);
+        }
+    }, [tradeState.status, tradeState.quote, pendingTrade]);
+
+    // Effect: handle trustline requirement for trade (ref guard prevents re-fire)
+    useEffect(() => {
+        if (pendingTrade && hasTrustline === false && !trustlineLoading && !trustlineEnablingRef.current) {
+            trustlineEnablingRef.current = true;
+            setMessages(prev => [...prev, {
+                role: 'assistant',
+                content: 'USDC trustline is required for this trade. Enabling it now...'
+            }]);
+            enableTrustline();
+        }
+        if (hasTrustline === true) {
+            trustlineEnablingRef.current = false;
+        }
+    }, [hasTrustline, pendingTrade, trustlineLoading, enableTrustline]);
+
+    // Effect: trade result
+    useEffect(() => {
+        if (tradeState.status === 'success' && tradeState.txHash && pendingTrade) {
+            setMessages(prev => [...prev, {
+                role: 'assistant',
+                content: `Swap successful! Swapped ${pendingTrade.amount} ${pendingTrade.fromAsset} for ~${pendingTrade.quote || '?'} ${pendingTrade.toAsset}.\n\n[View on Stellar Expert](https://stellar.expert/explorer/testnet/tx/${tradeState.txHash})`
+            }]);
+            setPendingTrade(null);
+            resetTradeState();
+        } else if (tradeState.status === 'error' && pendingTrade) {
+            setMessages(prev => [...prev, {
+                role: 'assistant',
+                content: `Trade failed: ${tradeState.error || 'Unknown error'}`
+            }]);
+            setPendingTrade(null);
+            resetTradeState();
+        }
+    }, [tradeState, pendingTrade, resetTradeState]);
+
+    // Effect: vault result
+    useEffect(() => {
+        if (vaultState.status === 'success' && pendingVault) {
+            const actionLabel = pendingVault.action === 'deposit' ? 'Deposited' :
+                               pendingVault.action === 'withdraw' ? 'Withdrew' : 'Locked';
+            setMessages(prev => [...prev, {
+                role: 'assistant',
+                content: `Vault ${pendingVault.action} successful! ${actionLabel} ${pendingVault.amount} XLM.${vaultState.lockId ? ` Lock ID: ${vaultState.lockId}` : ''}${vaultState.txHash && vaultState.txHash !== 'ok' ? `\n\n[View on Stellar Expert](https://stellar.expert/explorer/testnet/tx/${vaultState.txHash})` : ''}`
+            }]);
+            setPendingVault(null);
+            resetVaultState();
+        } else if (vaultState.status === 'error' && pendingVault) {
+            setMessages(prev => [...prev, {
+                role: 'assistant',
+                content: `Vault ${pendingVault.action} failed: ${vaultState.error || 'Unknown error'}`
+            }]);
+            setPendingVault(null);
+            resetVaultState();
+        }
+    }, [vaultState, pendingVault, resetVaultState]);
+
     const handleKeyDown = (e: React.KeyboardEvent) => {
         if (e.key === 'Enter' && !e.shiftKey) {
             e.preventDefault();
@@ -436,6 +635,13 @@ export default function App() {
                 const visionDescription = await analyzeScreenshot(dataUrl);
                 setVisionContext(visionDescription);
                 console.log('[HaloAI] Re-analysis complete!');
+
+                // Dev Mode auto-detection
+                if (!devModeManualOff && visionDescription) {
+                    const detection = detectDevMode(visionDescription, visionDescription);
+                    setDevMode(detection.enabled);
+                    setDevModeIdeName(detection.ideName || null);
+                }
             } else {
                 console.warn('[HaloAI] Capture returned null - no screenshot available');
             }
@@ -494,6 +700,26 @@ export default function App() {
                             </button>
                         </div>
                     </div>
+
+                    {/* Dev Mode Banner */}
+                    {devMode && (
+                        <div className="mx-6 mb-2 flex items-center justify-between px-3 py-2 rounded-lg bg-amber-500/10 border border-amber-500/15 animate-fade-in">
+                            <div className="flex items-center gap-2">
+                                <svg className="w-3.5 h-3.5 text-amber-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M6.75 7.5l3 2.25-3 2.25m4.5 0h3m-9 8.25h13.5A2.25 2.25 0 0021 18V6a2.25 2.25 0 00-2.25-2.25H5.25A2.25 2.25 0 003 6v12a2.25 2.25 0 002.25 2.25z" />
+                                </svg>
+                                <span className="text-xs text-amber-300/90 font-medium">
+                                    Dev Mode{devModeIdeName ? `: ${devModeIdeName} detected` : ''}
+                                </span>
+                            </div>
+                            <button
+                                onClick={() => { setDevMode(false); setDevModeManualOff(true); }}
+                                className="text-[10px] text-white/40 hover:text-white/70 px-2 py-0.5 rounded hover:bg-white/5 transition-colors"
+                            >
+                                Disable
+                            </button>
+                        </div>
+                    )}
 
                     {/* Messages Area or Greeting */}
                     <div className="flex-1 overflow-y-auto px-6">
@@ -576,15 +802,25 @@ export default function App() {
                                     </svg>
                                     <span>Screen analyzed</span>
                                 </div>
-                                <button
-                                    onClick={handleReanalyzeScreen}
-                                    className="text-xs text-white/60 hover:text-white flex items-center gap-1.5 px-2.5 py-1.5 hover:bg-white/5 rounded-md transition-colors"
-                                >
-                                    <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
-                                    </svg>
-                                    Re-analyze
-                                </button>
+                                <div className="flex items-center gap-2">
+                                    {devModeManualOff && !devMode && (
+                                        <button
+                                            onClick={() => { setDevModeManualOff(false); const d = detectDevMode(visionContext || '', visionContext || ''); setDevMode(d.enabled); setDevModeIdeName(d.ideName || null); }}
+                                            className="text-[10px] text-amber-400/50 hover:text-amber-400 px-2 py-1 hover:bg-amber-500/5 rounded transition-colors"
+                                        >
+                                            Re-enable Dev Mode
+                                        </button>
+                                    )}
+                                    <button
+                                        onClick={handleReanalyzeScreen}
+                                        className="text-xs text-white/60 hover:text-white flex items-center gap-1.5 px-2.5 py-1.5 hover:bg-white/5 rounded-md transition-colors"
+                                    >
+                                        <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                                        </svg>
+                                        Re-analyze
+                                    </button>
+                                </div>
                             </div>
                         )}
 
@@ -744,6 +980,102 @@ export default function App() {
                                 ) : (
                                     'Confirm Send'
                                 )}
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* Trade Confirmation Modal */}
+            {pendingTrade && pendingTrade.quote && (
+                <div className="fixed inset-0 z-[1000000] flex items-center justify-center bg-black/60 backdrop-blur-sm animate-fade-in">
+                    <div className="bg-[#1A1A1A] border border-white/10 rounded-xl p-6 w-[400px] shadow-2xl animate-scale-in">
+                        <h3 className="text-lg font-medium text-white mb-4">Confirm Swap</h3>
+                        <div className="space-y-4 mb-6">
+                            <div className="bg-white/5 rounded-lg p-3">
+                                <label className="text-xs text-white/40 block mb-1">You Send</label>
+                                <p className="text-lg font-medium text-white">{pendingTrade.amount} {pendingTrade.fromAsset}</p>
+                            </div>
+                            <div className="bg-white/5 rounded-lg p-3">
+                                <label className="text-xs text-white/40 block mb-1">You Receive (estimated)</label>
+                                <p className="text-lg font-medium text-emerald-400">{parseFloat(pendingTrade.quote).toFixed(4)} {pendingTrade.toAsset}</p>
+                            </div>
+                            <div className="flex gap-3">
+                                <div className="bg-white/5 rounded-lg p-3 flex-1">
+                                    <label className="text-xs text-white/40 block mb-1">Slippage Tolerance</label>
+                                    <p className="text-sm text-white/90">{pendingTrade.slippage}%</p>
+                                </div>
+                                <div className="bg-white/5 rounded-lg p-3 flex-1">
+                                    <label className="text-xs text-white/40 block mb-1">Mode</label>
+                                    <p className="text-sm text-white/90 capitalize">{pendingTrade.mode}</p>
+                                </div>
+                            </div>
+                        </div>
+                        <div className="flex gap-3">
+                            <button
+                                onClick={() => { setPendingTrade(null); resetTradeState(); }}
+                                className="flex-1 px-4 py-2 rounded-lg bg-white/5 hover:bg-white/10 text-white/60 hover:text-white transition-colors text-sm"
+                            >
+                                Cancel
+                            </button>
+                            <button
+                                onClick={() => swap(pendingTrade.amount, pendingTrade.quote!)}
+                                disabled={tradeState.status === 'swapping'}
+                                className="flex-1 px-4 py-2 rounded-lg bg-emerald-500 hover:bg-emerald-400 text-white font-medium transition-colors text-sm flex items-center justify-center gap-2"
+                            >
+                                {tradeState.status === 'swapping' ? (
+                                    <>
+                                        <div className="w-3 h-3 border-2 border-white/20 border-t-white rounded-full animate-spin" />
+                                        <span>Swapping...</span>
+                                    </>
+                                ) : 'Confirm Swap'}
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* Vault Confirmation Modal */}
+            {pendingVault && (
+                <div className="fixed inset-0 z-[1000000] flex items-center justify-center bg-black/60 backdrop-blur-sm animate-fade-in">
+                    <div className="bg-[#1A1A1A] border border-white/10 rounded-xl p-6 w-[400px] shadow-2xl animate-scale-in">
+                        <h3 className="text-lg font-medium text-white mb-4">
+                            Confirm Vault {pendingVault.action.charAt(0).toUpperCase() + pendingVault.action.slice(1)}
+                        </h3>
+                        <div className="space-y-4 mb-6">
+                            <div className="bg-white/5 rounded-lg p-3">
+                                <label className="text-xs text-white/40 block mb-1">Amount</label>
+                                <p className="text-lg font-medium text-white">{pendingVault.amount} XLM</p>
+                            </div>
+                            {pendingVault.action === 'lock' && pendingVault.lockLedgers && (
+                                <div className="bg-white/5 rounded-lg p-3">
+                                    <label className="text-xs text-white/40 block mb-1">Lock Duration</label>
+                                    <p className="text-sm text-white/90">{pendingVault.lockLedgers} ledgers (~{Math.round(parseInt(pendingVault.lockLedgers) * 5 / 60)} minutes)</p>
+                                </div>
+                            )}
+                        </div>
+                        <div className="flex gap-3">
+                            <button
+                                onClick={() => { setPendingVault(null); resetVaultState(); }}
+                                className="flex-1 px-4 py-2 rounded-lg bg-white/5 hover:bg-white/10 text-white/60 hover:text-white transition-colors text-sm"
+                            >
+                                Cancel
+                            </button>
+                            <button
+                                onClick={() => {
+                                    if (pendingVault.action === 'deposit') depositToVault(pendingVault.amount);
+                                    else if (pendingVault.action === 'withdraw') withdrawFromVault(pendingVault.amount);
+                                    else if (pendingVault.action === 'lock') lockInVault(pendingVault.amount, parseInt(pendingVault.lockLedgers || '1000'));
+                                }}
+                                disabled={vaultState.status === 'loading'}
+                                className="flex-1 px-4 py-2 rounded-lg bg-emerald-500 hover:bg-emerald-400 text-white font-medium transition-colors text-sm flex items-center justify-center gap-2"
+                            >
+                                {vaultState.status === 'loading' ? (
+                                    <>
+                                        <div className="w-3 h-3 border-2 border-white/20 border-t-white rounded-full animate-spin" />
+                                        <span>Processing...</span>
+                                    </>
+                                ) : `Confirm ${pendingVault.action.charAt(0).toUpperCase() + pendingVault.action.slice(1)}`}
                             </button>
                         </div>
                     </div>

@@ -832,9 +832,9 @@ export default function WalletPanel({ isOpen, onClose }: WalletPanelProps) {
                                 />
                                 <input
                                     type="number"
-                                    min="0"
+                                    min="1"
                                     step="1"
-                                    placeholder="Expires at ledger (e.g. 9999999)"
+                                    placeholder="Lock duration in minutes (e.g. 10)"
                                     value={lockExpiry}
                                     onChange={e => {
                                         setLockExpiry(e.target.value);

@@ -340,11 +340,11 @@ export function useWallet() {
         }
     }, [userId, refreshVaultBalance]);
 
-    const lockInVault = useCallback(async (amount: string, expiresAtLedger: number) => {
+    const lockInVault = useCallback(async (amount: string, lockMinutes: number) => {
         if (!userId) return;
         setVaultState({ status: 'loading' });
         try {
-            const result = await vaultLock(userId, amount, expiresAtLedger);
+            const result = await vaultLock(userId, amount, lockMinutes);
             if (!mountedRef.current) return;
             setVaultState({ status: 'success', txHash: result.txHash, lockId: result.lockId });
             refreshVaultBalance();

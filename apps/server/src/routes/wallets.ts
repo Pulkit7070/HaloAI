@@ -661,12 +661,19 @@ router.post('/:userId/vault/withdraw', async (req: Request, res: Response) => {
 // POST /api/wallets/:userId/vault/lock
 router.post('/:userId/vault/lock', async (req: Request, res: Response) => {
     try {
-        const { amount, expiresAtLedger } = req.body;
-        if (!amount || !expiresAtLedger) {
-            return res.status(400).json({ error: 'amount and expiresAtLedger are required' });
+        const { amount, lockMinutes } = req.body;
+        if (!amount || !lockMinutes) {
+            return res.status(400).json({ error: 'amount and lockMinutes are required' });
         }
         const wallet = await getWalletRecord(req.params.userId);
         if (!wallet) return res.status(404).json({ error: 'Wallet not found' });
+
+        // Fetch current ledger and compute absolute expiry
+        // Stellar ledgers close roughly every ~5 seconds
+        const latestLedger = await sorobanServer.getLatestLedger();
+        const currentLedger = latestLedger.sequence;
+        const ledgersPerMinute = 12; // ~5s per ledger
+        const expiresAt = currentLedger + Math.ceil(Number(lockMinutes) * ledgersPerMinute);
 
         const secretKey = decrypt(wallet.encrypted_secret);
         const stroops = BigInt(Math.round(Number(amount) * 1e7));
@@ -675,7 +682,7 @@ router.post('/:userId/vault/lock', async (req: Request, res: Response) => {
             addressScVal(wallet.public_key),
             addressScVal(XLM_SAC_ID),
             nativeI128(stroops),
-            nativeU64(Number(expiresAtLedger)),
+            nativeU64(expiresAt),
         ]);
 
         let lockId: number | null = null;

@@ -220,12 +220,12 @@ export async function vaultWithdraw(
 export async function vaultLock(
     userId: string,
     amount: string,
-    expiresAtLedger: number,
+    lockMinutes: number,
 ): Promise<{ txHash: string; lockId: number | null }> {
     const res = await safeFetch(`${WALLETS_URL}/${userId}/vault/lock`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ amount, expiresAtLedger }),
+        body: JSON.stringify({ amount, lockMinutes }),
     });
     if (!res.ok) throw new Error(await parseErrorBody(res));
     return res.json();

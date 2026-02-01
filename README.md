@@ -371,5 +371,5 @@ Pulkit7070/HaloAI/
 
 <div align="center">
   <p>Made with ❤️ by <b>Team Kaizen</b></p>
-  <p>Powered by <b>Cerebras GLM-4.7</b> • <b>Stellar Blockchain</b> • <b>Electron</b></p>
+  <p>Powered by <b>Stellar Blockchain</b> • <b>Electron</b></p>
 </div>

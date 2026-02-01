@@ -115,14 +115,16 @@ Building a production-ready desktop app with blockchain integration in record ti
 
 - **Instant Wake**: Double-tap your global hotkey (`Cmd+Shift+Space` on macOS, `Ctrl+Space` on Windows/Linux) to summon HaloAI. No clicks required.
 - **Context Vision**: Captures your active screen instantly and analyzes it with Llama 3.2 Vision. Knows what you're working on without you explaining.
+- **Dev Mode Auto-Detection**: Automatically detects when you're in an IDE (VS Code, IntelliJ, WebStorm, PyCharm, etc.) using weighted confidence scoring, extracts file names, errors, and stack traces from your screen, and switches to a terse diff-based fix prompt.
 - **Smart Actions**:
   - **Debug**: Paste a stack trace? HaloAI reads it and suggests fixes with working code.
   - **Draft**: Email thread on screen? It drafts a professional reply matching your tone.
   - **Summarize**: Meeting notes scattered around? Organizes them into action items.
   - **Send Crypto**: "Send 5 XLM to Bob" — HaloAI parses intent, generates transaction JSON, and executes it.
-  - **Portfolio**: "What's my balance?" — Displays real-time XLM holdings.
-  - **History**: "Show my transactions" — Visualizes last 20 Stellar operations with timestamps.
+  - **Portfolio**: "What's my balance?" — Displays real-time XLM holdings and multi-asset balances.
+  - **History**: "Show my transactions" — Visualizes last 20 Stellar operations with timestamps and filtering (all/payments/trades).
   - **Explore Assets**: "What's USDC on Stellar?" — Explains custom assets and guides trustline creation.
+  - **DEX Swap**: "Swap 10 XLM to USDC" — Fetches live quotes via Stellar DEX path payments, auto-enables USDC trustline if needed, and executes the swap.
 - **Voice Mode**: Don't want to type? Just speak. Integrated **Deepgram** for near-instant speech-to-text.
 - **Stellar Wallet**: Built-in non-custodial wallet with:
   - Automatic testnet wallet creation and funding via Friendbot
@@ -130,6 +132,16 @@ Building a production-ready desktop app with blockchain integration in record ti
   - Transaction history with StellarChain explorer links
   - Trustline management for custom Stellar assets
   - Safety warnings preventing cross-chain operations
+- **Escrow Vault**: On-chain time-locked vault powered by a Soroban smart contract:
+  - Deposit and withdraw any Stellar token
+  - Time-lock funds with ledger-based expiry
+  - Release to a recipient or reclaim after expiry
+- **Strategy Commitment (ZK-Ready)**: Commit-reveal scheme for trading strategies, stored on-chain via Soroban:
+  - **Commit**: Hash your trading strategy (`SHA-256(strategy + salt)`) on-chain — plaintext stays private
+  - **Attach Proof**: Link a proof hash to your commitment and trade transaction after executing a swap
+  - **Reveal**: Unmask your strategy on-chain at any time — the contract verifies the hash matches
+  - Private Strategy Mode toggle in the wallet UI for stamping trades with verifiable strategy proofs
+  - ZK-ready boundary — swap SHA-256 for real zero-knowledge proofs in production
 
 ## Tech Stack
 
@@ -145,16 +157,17 @@ This project uses a modern monorepo architecture managed by **TurboRepo** and **
 - **Voice**: [Deepgram API](https://deepgram.com/) for speech-to-text
 - **Screen Capture**: Electron desktopCapturer with retry logic
 - **Authentication**: [Privy](https://privy.io/) embedded wallets
-- **Storage**: electron-store for settings and preferences
+- **Storage**: Custom SimpleStore (JSON-based, pnpm-compatible) for settings and preferences
+- **Deep Linking**: `halo://` protocol for Privy OAuth callbacks
 
 ### Server (`apps/server`)
 
 - **Framework**: [Express 4](https://expressjs.com/) with TypeScript
 - **Database**: [Supabase](https://supabase.com/) (PostgreSQL)
-- **Blockchain**: [Stellar SDK 12.3](https://developers.stellar.org/docs/data/sdks/javascript)
-- **Network**: Stellar Testnet (Horizon API)
+- **Blockchain**: [Stellar SDK 14.5](https://developers.stellar.org/docs/data/sdks/javascript) + [Soroban Client](https://soroban.stellar.org/)
+- **Network**: Stellar Testnet (Horizon API + Soroban RPC)
 - **Encryption**: AES-256-GCM with scrypt key derivation
-- **API Endpoints**: Wallet creation, balance queries, XLM transfers, transaction history
+- **API Endpoints**: Wallet CRUD, XLM transfers, DEX swaps, trustline management, vault operations, strategy commitments, proof attachments & reveals
 
 ### Web Landing (`apps/web`)
 
@@ -163,6 +176,20 @@ This project uses a modern monorepo architecture managed by **TurboRepo** and **
 - **Styling**: TailwindCSS with tailwindcss-animate
 - **Forms**: react-hook-form + zod validation
 - **Analytics**: Vercel Analytics
+
+### Smart Contracts (`contracts/`)
+
+- **Language**: Rust (Soroban SDK)
+- **Network**: Stellar Testnet (Soroban RPC)
+- **Strategy Commitment** (`contracts/strategy-commitment`):
+  - Contract ID: `CBNYO7UL3A3254A752CNMFIFJRXH6HLIAGPM6YLSFHU27LAU4JTBY4WO`
+  - Functions: `commit`, `reveal`, `attach_proof`, `reveal_proof`, `get`, `get_proof`
+  - Storage: `CommitmentRecord` and `ProofRecord` with auto-incrementing IDs
+- **Escrow Vault** (`contracts/escrow-vault`):
+  - Contract ID: `CANZIG67XFUHEUQCRJ4ZF2BG2OPCJMWJWBQTO37MVULQFQMDTKAOACQO`
+  - Functions: `init`, `deposit`, `withdraw`, `lock`, `release`, `reclaim`, `balance`, `get_lock`
+  - Storage: Per-user balances, time-locked `LockEntry` records with status tracking
+- **Build & Deploy**: `deploy.sh` scripts, GitHub Actions with StellarExpert's soroban-build-workflow
 
 ### AI & Infrastructure
 
@@ -223,6 +250,8 @@ This project uses a modern monorepo architecture managed by **TurboRepo** and **
    VITE_DEEPGRAM_API_KEY=your_deepgram_key
    VITE_OPENROUTER_API_KEY=your_openrouter_key
    VITE_API_URL=http://localhost:3001/api/wallets
+   VITE_VAULT_CONTRACT_ID=your_escrow_vault_contract_id
+   VITE_XLM_SAC_ID=your_xlm_sac_contract_id
    ```
 
    **Server (`apps/server/.env`):**
@@ -281,28 +310,35 @@ Pulkit7070/HaloAI/
 │   │   ├── electron/
 │   │   │   └── main.ts               # Main process (window, shortcuts, IPC)
 │   │   ├── src/
-│   │   │   ├── App.tsx               # Main React component
+│   │   │   ├── App.tsx               # Main React component (chat UI + intent detection)
 │   │   │   ├── components/
-│   │   │   │   ├── MessageBubble.tsx # Chat with markdown rendering
-│   │   │   │   ├── WalletPanel.tsx   # Stellar wallet UI
-│   │   │   │   ├── WalletSendForm.tsx
+│   │   │   │   ├── MessageBubble.tsx  # Chat with markdown rendering
+│   │   │   │   ├── WalletPanel.tsx    # Tabbed wallet UI (wallet/trade/vault)
+│   │   │   │   ├── WalletSendForm.tsx # XLM send form
+│   │   │   │   ├── PortfolioCard.tsx  # Balance + multi-asset display
 │   │   │   │   ├── TransactionHistory.tsx
-│   │   │   │   └── SettingsModal.tsx
+│   │   │   │   ├── TransactionCard.tsx # Individual tx with explorer links
+│   │   │   │   ├── SettingsModal.tsx  # Hotkey configuration
+│   │   │   │   └── ErrorBoundary.tsx  # Graceful error handling
 │   │   │   ├── hooks/
-│   │   │   │   ├── useAI.ts          # AI chat with contextual prompts
-│   │   │   │   ├── useWallet.ts      # Stellar wallet operations
-│   │   │   │   ├── useAuth.ts        # Privy authentication
-│   │   │   │   ├── useVision.ts      # Screen capture & vision
-│   │   │   │   └── useVoiceInput.ts  # Deepgram voice input
+│   │   │   │   ├── useAI.ts           # AI chat with 20+ contextual prompts
+│   │   │   │   ├── useWallet.ts       # Stellar wallet + vault + proof ops
+│   │   │   │   ├── useAuth.ts         # Privy authentication
+│   │   │   │   ├── useVision.ts       # Screen capture & vision analysis
+│   │   │   │   └── useVoiceInput.ts   # Deepgram voice input
 │   │   │   └── services/
-│   │   │       └── walletApi.ts      # API client
+│   │   │       ├── walletApi.ts       # API client (wallet, swap, vault, proofs)
+│   │   │       ├── strategyCommitment.ts # SHA-256 commitment hash generation
+│   │   │       ├── proofAttachment.ts # ZK-ready proof bundle generation
+│   │   │       ├── escrowVault.ts     # Soroban vault transaction builder
+│   │   │       └── devMode.ts         # IDE auto-detection & context extraction
 │   │   └── package.json
 │   │
 │   ├── server/                       # Express API Server
 │   │   ├── src/
 │   │   │   ├── index.ts              # Server entry point
 │   │   │   └── routes/
-│   │   │       └── wallets.ts        # Wallet CRUD + Stellar ops
+│   │   │       └── wallets.ts        # Wallet, swap, vault, commit, proof routes
 │   │   └── package.json
 │   │
 │   └── web/                          # Next.js Landing Page
@@ -317,9 +353,20 @@ Pulkit7070/HaloAI/
 │       │   └── ... (78 components)
 │       └── package.json
 │
-├── packages/
-│   └── ui/                           # Shared UI (future)
+├── contracts/
+│   ├── strategy-commitment/          # Soroban commit-reveal contract (Rust)
+│   │   ├── src/lib.rs                # Contract logic
+│   │   └── deploy.sh                 # Testnet deployment script
+│   └── escrow-vault/                 # Soroban time-locked vault contract (Rust)
+│       ├── src/lib.rs                # Contract logic
+│       └── deploy.sh                 # Testnet deployment script
 │
+├── packages/
+│   ├── api-client/                   # Shared API client library
+│   └── ui/                           # Shared UI components
+│
+├── .github/workflows/
+│   └── release-contracts.yml         # Soroban contract release workflow
 ├── package.json                      # Root workspace
 ├── pnpm-workspace.yaml               # pnpm workspaces
 ├── turbo.json                        # TurboRepo config
@@ -328,17 +375,19 @@ Pulkit7070/HaloAI/
 
 ## Hackathon Context
 
+- **Team**: Kaizen (Team #12)
+- **Project**: Halo AI
 - **Built for**: Fast-paced innovation with modern AI infrastructure
-- **Focus**: Desktop-native AI assistant with embedded blockchain wallet
-- **Tools Used**: 
+- **Focus**: Desktop-native AI assistant with embedded blockchain wallet + on-chain strategy verification
+- **Tools Used**:
     - **Cline**: Rapid prototyping, monorepo scaffolding, and refactoring
     - **Cerebras**: Ultra-fast GLM-4.7 inference for instant AI responses
-    - **Stellar**: Blockchain infrastructure for transparent, instant payments
+    - **Stellar + Soroban**: Blockchain infrastructure for payments, DEX swaps, time-locked vaults, and on-chain commit-reveal proofs
     - **Electron**: Cross-platform desktop capabilities
 
 ## The Team
 
-**Team Kaizen** 🚀
+**Team Kaizen** (Team #12) 🚀
 
 - **Pulkit** - [GitHub](https://github.com/Pulkit7070)
 - **Moin Akhtar** - [GitHub](https://github.com/MDMOINAKHTARR)

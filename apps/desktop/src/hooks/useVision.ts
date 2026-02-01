@@ -1,11 +1,15 @@
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useRef } from 'react';
 import { createWorker } from 'tesseract.js';
 
 const OPENROUTER_API_URL = 'https://openrouter.ai/api/v1/chat/completions';
 const VISION_MODEL = 'meta-llama/llama-3.2-11b-vision-instruct:free'; // Llama vision model
 
+const DEBOUNCE_MS = 3000;
+
 export function useVision() {
     const [isAnalyzing, setIsAnalyzing] = useState(false);
+    const lastAnalysisRef = useRef<number>(0);
+    const cachedResultRef = useRef<string>('');
 
     const analyzeWithOCR = useCallback(async (screenshotDataUrl: string): Promise<string> => {
         try {
@@ -127,6 +131,13 @@ Be specific and thorough.`
     }, []);
 
     const analyzeScreenshot = useCallback(async (screenshotDataUrl: string): Promise<string> => {
+        // Debounce: if called within 3s of last analysis, return cached result
+        const now = Date.now();
+        if (now - lastAnalysisRef.current < DEBOUNCE_MS && cachedResultRef.current) {
+            console.log('[Vision] Debounced — returning cached result');
+            return cachedResultRef.current;
+        }
+
         setIsAnalyzing(true);
 
         try {
@@ -134,11 +145,15 @@ Be specific and thorough.`
             const openRouterResult = await analyzeWithOpenRouter(screenshotDataUrl);
 
             if (openRouterResult) {
+                lastAnalysisRef.current = Date.now();
+                cachedResultRef.current = openRouterResult;
                 return openRouterResult;
             }
 
             // OpenRouter failed or rate-limited, fall back to OCR
             const ocrResult = await analyzeWithOCR(screenshotDataUrl);
+            lastAnalysisRef.current = Date.now();
+            cachedResultRef.current = ocrResult;
             return ocrResult;
 
         } catch (error) {

@@ -20,7 +20,8 @@ export function useAI() {
     const chat = useCallback(async (
         messages: Message[],
         onStream?: (chunk: string) => void,
-        visionContext?: string  // Vision description from OpenRouter
+        visionContext?: string,  // Vision description from OpenRouter
+        devMode?: boolean        // Dev Mode — IDE detected on screen
     ): Promise<string> => {
         const apiKey = import.meta.env.VITE_CEREBRAS_API_KEY;
 
@@ -38,7 +39,13 @@ export function useAI() {
 
         try {
             // Detect context type based on user input and vision context
-            const contextType = detectContextType(messages, !!visionContext);
+            let contextType = detectContextType(messages, !!visionContext);
+
+            // Dev Mode override: coding/general → dev when IDE detected
+            if (devMode && (contextType === 'coding' || contextType === 'general')) {
+                contextType = 'dev';
+            }
+
             const systemPrompt = getContextualSystemPrompt(contextType, visionContext);
 
             console.log('[HaloAI] Calling Cerebras GLM 4.7...');
@@ -155,7 +162,7 @@ export function buildUserMessage(text: string, screenshot?: string): Message {
 function detectContextType(
     messages: Message[],
     hasScreenshot: boolean
-): 'coding' | 'writing' | 'email' | 'transfer' | 'balance' | 'history' | 'asset_discovery' | 'trustline' | 'price_info' | 'safety_warning' | 'examples' | 'advanced_mode' | 'general' {
+): 'coding' | 'writing' | 'email' | 'transfer' | 'trade' | 'vault' | 'balance' | 'history' | 'asset_discovery' | 'trustline' | 'price_info' | 'safety_warning' | 'examples' | 'advanced_mode' | 'dev' | 'general' {
     const lastMessage = messages[messages.length - 1];
     const lastMessageText = typeof lastMessage?.content === 'string'
         ? lastMessage.content.toLowerCase()
@@ -182,9 +189,19 @@ function detectContextType(
         'document', 'paragraph', 'essay', 'article', 'content', 'tone'
     ];
 
+    // Check for trade/swap context (before transfer — "swap" and "trade" should NOT match "transfer")
+    if (['swap', 'trade', 'exchange', 'convert', 'xlm to usdc', 'buy usdc', 'sell xlm'].some(keyword => combinedText.includes(keyword))) {
+        return 'trade';
+    }
+
     // Check for transfer context
     if (['send', 'pay', 'transfer'].some(keyword => combinedText.includes(keyword))) {
         return 'transfer';
+    }
+
+    // Check for vault context (before balance — "deposit" should route to vault)
+    if (['vault', 'deposit', 'withdraw', 'lock funds', 'escrow', 'savings', 'save xlm', 'lock xlm'].some(keyword => combinedText.includes(keyword))) {
+        return 'vault';
     }
 
     // Check for balance/portfolio context
@@ -248,7 +265,7 @@ function detectContextType(
 
 // Get contextual system prompt based on detected context
 function getContextualSystemPrompt(
-    contextType: 'coding' | 'writing' | 'email' | 'transfer' | 'balance' | 'history' | 'asset_discovery' | 'trustline' | 'price_info' | 'safety_warning' | 'examples' | 'advanced_mode' | 'general',
+    contextType: 'coding' | 'writing' | 'email' | 'transfer' | 'trade' | 'vault' | 'balance' | 'history' | 'asset_discovery' | 'trustline' | 'price_info' | 'safety_warning' | 'examples' | 'advanced_mode' | 'dev' | 'general',
     visionContext?: string
 ): string {
     const basePrompt = `You are Halo AI, an AI assistant specialized in the Stellar blockchain.
@@ -299,6 +316,90 @@ Always prioritize clarity, correctness, and transaction safety.
 1. If the address is missing, ask for it in plain text (NOT JSON).
 2. If the amount is missing, ask for it in plain text (NOT JSON).
 3. If both key details are present, output ONLY the JSON block.`;
+
+        case 'trade':
+            return `${basePrompt}
+
+**CONTEXT**: User wants to swap/trade XLM to USDC on the Stellar DEX.
+
+**YOUR ROLE**:
+- Extract the trade amount from the user's message
+- Output ONLY structured JSON when amount is provided
+- If amount is missing, ask for it in plain text (NOT JSON)
+- Only XLM to USDC swaps are currently supported
+
+**OUTPUT FORMAT (strict TradeDraft schema)**:
+\`\`\`json
+{
+    "type": "swap",
+    "fromAsset": "XLM",
+    "toAsset": "USDC",
+    "amount": "amount_number_as_string",
+    "slippage": "1",
+    "mode": "market"
+}
+\`\`\`
+
+**FIELD RULES**:
+- \`fromAsset\`: Always "XLM" (only supported source).
+- \`toAsset\`: Always "USDC" (only supported destination).
+- \`amount\`: The number of XLM to swap, as a string.
+- \`slippage\`: Percentage tolerance as a string. Default "1" (1%). If user says "2% slippage", use "2".
+- \`mode\`: Either "market" or "limit". Default "market" unless user explicitly says "limit order".
+
+**RULES**:
+1. If the amount is missing or unclear, ask in plain text: "How much XLM would you like to swap to USDC?"
+2. If both amount and intent are clear, output ONLY the JSON block.
+3. Only XLM→USDC is supported. If user asks for other pairs, explain this limitation.
+4. Do NOT include any conversational text when outputting JSON.
+5. Always include all 6 fields in the JSON output. Never omit slippage or mode.`;
+
+        case 'vault':
+            return `${basePrompt}
+
+**CONTEXT**: User wants to perform a vault operation (deposit, withdraw, or lock funds).
+
+**YOUR ROLE**:
+- Detect the sub-action: deposit, withdraw, or lock
+- Extract the amount from the user's message
+- For lock operations, also extract the lock duration in ledgers (~5 seconds each)
+- Output ONLY structured JSON when details are complete
+- If details are missing, ask in plain text
+
+**OUTPUT FORMATS**:
+
+For deposits:
+\`\`\`json
+{
+    "type": "vault_deposit",
+    "amount": "amount_number_as_string"
+}
+\`\`\`
+
+For withdrawals:
+\`\`\`json
+{
+    "type": "vault_withdraw",
+    "amount": "amount_number_as_string"
+}
+\`\`\`
+
+For time-locked savings:
+\`\`\`json
+{
+    "type": "vault_lock",
+    "amount": "amount_number_as_string",
+    "lockLedgers": "number_of_ledgers_as_string"
+}
+\`\`\`
+
+**RULES**:
+1. If the action (deposit/withdraw/lock) is ambiguous, ask: "Would you like to deposit, withdraw, or lock funds in your vault?"
+2. If the amount is missing, ask for it in plain text.
+3. For lock, if duration is missing, ask: "How many ledgers would you like to lock for? (e.g., 1000 ledgers ≈ 83 minutes)"
+4. Do NOT include any conversational text when outputting JSON.
+5. "save" or "savings" should default to deposit.
+6. Vault operations use XLM only.`;
 
         case 'balance':
             return `${basePrompt}
@@ -557,6 +658,34 @@ Just ask naturally, and I'll guide you through the process!`;
 **RESPONSE STYLE**: Use technical terms without defining them. Provide code snippets when relevant. Keep explanations brief (2-3 sentences max).
 
 **CRITICAL**: Still enforce safety checks, block cross-chain operations, require confirmation for trustlines/transfers.`;
+
+        case 'dev':
+            return `${basePrompt}${visionSection}
+
+**CONTEXT**: Developer Mode — an IDE was detected on the user's screen.
+
+**RESPONSE FORMAT** (follow strictly):
+1. **Diagnosis** — 1-2 sentences identifying the issue or summarizing what's on screen.
+2. **Fix** — Exact code changes in unified diff format:
+\`\`\`diff
+- old line
++ new line
+\`\`\`
+3. **Commands** — Shell commands to run (if any):
+\`\`\`bash
+command here
+\`\`\`
+4. **Why** — 1 sentence explaining the fix (only if non-obvious).
+
+**RULES**:
+- Be terse. No filler, no encouragement, no pleasantries.
+- Use diff format for code changes, not full file rewrites.
+- Reference exact file paths and line numbers when visible on screen.
+- Prioritize addressing errors and stack traces visible on screen.
+- If no specific problem is visible, summarize what's on screen in 2-3 bullet points and ask one focused question.
+- Code blocks must use proper language tags (\`\`\`diff, \`\`\`bash, \`\`\`typescript, etc.).
+- Keep total response under 300 words unless the fix is genuinely complex.
+- NEVER say "I can't see your screen" — you have the screen context above.`;
 
         case 'coding':
             return `${basePrompt}${visionSection}${formattingRules}

@@ -168,6 +168,21 @@ export async function executeSwap(
     return res.json();
 }
 
+// ─── Strategy Commitment API ─────────────────────────────────────────────────
+
+export async function commitStrategy(
+    userId: string,
+    commitmentHex: string,
+): Promise<{ commitId: number }> {
+    const res = await safeFetch(`${WALLETS_URL}/${userId}/commit`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ commitmentHex }),
+    });
+    if (!res.ok) throw new Error(await parseErrorBody(res));
+    return res.json();
+}
+
 // ─── Vault API ───────────────────────────────────────────────────────────────
 
 export async function getVaultBalance(userId: string): Promise<{ balance: string }> {
@@ -247,6 +262,59 @@ export async function vaultReclaim(
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ lockId }),
+    });
+    if (!res.ok) throw new Error(await parseErrorBody(res));
+    return res.json();
+}
+
+// ─── Proof Attachment API ─────────────────────────────────────────────────────
+
+export async function attachProof(
+    userId: string,
+    proofHashHex: string,
+    commitId: number,
+    txHash: string,
+): Promise<{ proofId: number }> {
+    const res = await safeFetch(`${WALLETS_URL}/${userId}/proofs/attach`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ proofHashHex, commitId, txHash }),
+    });
+    if (!res.ok) throw new Error(await parseErrorBody(res));
+    return res.json();
+}
+
+export interface ProofRecordResponse {
+    owner: string;
+    proofHash: string;
+    commitId: number;
+    txHash: string;
+    revealed: boolean;
+    strategy: string;
+    tradeParams: string;
+    timestamp: number;
+}
+
+export async function getProof(
+    userId: string,
+    proofId: number,
+): Promise<ProofRecordResponse> {
+    const res = await safeFetch(`${WALLETS_URL}/${userId}/proofs/${proofId}`);
+    if (!res.ok) throw new Error(await parseErrorBody(res));
+    return res.json();
+}
+
+export async function revealProof(
+    userId: string,
+    proofId: number,
+    strategy: string,
+    tradeParams: string,
+    salt: string,
+): Promise<{ success: boolean }> {
+    const res = await safeFetch(`${WALLETS_URL}/${userId}/proofs/${proofId}/reveal`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ strategy, tradeParams, salt }),
     });
     if (!res.ok) throw new Error(await parseErrorBody(res));
     return res.json();

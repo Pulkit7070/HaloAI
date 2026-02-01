@@ -1,7 +1,10 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { useAuth } from './useAuth';
-import { createWallet, getWallet, sendXLM, getTransactions, checkTrustline, addTrustline, getSwapQuote, executeSwap, getVaultBalance, vaultDeposit, vaultWithdraw, vaultLock } from '../services/walletApi';
+import { createWallet, getWallet, sendXLM, getTransactions, checkTrustline, addTrustline, getSwapQuote, executeSwap, getVaultBalance, vaultDeposit, vaultWithdraw, vaultLock, attachProof, revealProof as revealProofApi, commitStrategy } from '../services/walletApi';
 import type { Transaction } from '../services/walletApi';
+import { generateProof, saveProofBundle, loadProofBundle, encodeTradeParams } from '../services/proofAttachment';
+import { computeCommitment, generateSalt, toHex } from '../services/strategyCommitment';
+import type { ProofBundle } from '../services/proofAttachment';
 
 interface SendState {
     status: 'idle' | 'loading' | 'success' | 'error';
@@ -21,6 +24,13 @@ interface VaultState {
     txHash?: string;
     error?: string;
     lockId?: number | null;
+}
+
+interface ProofState {
+    status: 'idle' | 'loading' | 'success' | 'error';
+    proofId?: number | null;
+    proofHashHex?: string;
+    error?: string;
 }
 
 export function useWallet() {
@@ -213,6 +223,68 @@ export function useWallet() {
         }
     }, [userId]);
 
+    /** Full chain: commit strategy → execute swap → attach proof (when privateMode ON) */
+    const swapWithProof = useCallback(async (
+        amount: string,
+        minDestAmount: string,
+        strategyNote: string,
+    ) => {
+        if (!userId) return;
+        setTradeState(prev => ({ ...prev, status: 'swapping' }));
+        setProofState({ status: 'loading' });
+        try {
+            // 1. Compute commitment hash: sha256(strategy || salt)
+            const salt = generateSalt();
+            const commitment = await computeCommitment(strategyNote, salt);
+            const commitmentHex = toHex(commitment);
+
+            // 2. Commit on-chain
+            const commitResult = await commitStrategy(userId, commitmentHex);
+            const commitId = commitResult.commitId;
+
+            // 3. Execute the swap
+            const swapResult = await executeSwap(userId, amount, minDestAmount);
+            if (!mountedRef.current) return;
+            setBalance(swapResult.balance);
+            setTradeState({ status: 'success', txHash: swapResult.txHash });
+            setRefreshKey(k => k + 1);
+
+            // 4. Generate proof bundle & attach on-chain
+            const tradeParamsObj = {
+                action: 'swap',
+                asset: 'XLM',
+                amount,
+                destAsset: 'USDC',
+                destAmount: minDestAmount,
+            };
+            const tradeParamsStr = encodeTradeParams(tradeParamsObj);
+            const bundle = await generateProof(strategyNote, tradeParamsStr);
+
+            const proofResult = await attachProof(userId, bundle.proofHashHex, commitId, swapResult.txHash);
+            if (!mountedRef.current) return;
+
+            if (proofResult.proofId !== null && proofResult.proofId !== undefined) {
+                saveProofBundle(proofResult.proofId, bundle);
+            }
+
+            setProofState({
+                status: 'success',
+                proofId: proofResult.proofId,
+                proofHashHex: bundle.proofHashHex,
+            });
+        } catch (err: any) {
+            if (!mountedRef.current) return;
+            console.error('[useWallet] swapWithProof error:', err);
+            // If swap already succeeded but proof failed, keep swap success
+            if (tradeState.status === 'success') {
+                setProofState({ status: 'error', error: err.message || 'Proof attachment failed' });
+            } else {
+                setTradeState({ status: 'error', error: err.message || 'Swap with proof failed' });
+                setProofState({ status: 'idle' });
+            }
+        }
+    }, [userId, tradeState.status]);
+
     const resetTradeState = useCallback(() => {
         setTradeState({ status: 'idle' });
     }, []);
@@ -286,6 +358,70 @@ export function useWallet() {
         setVaultState({ status: 'idle' });
     }, []);
 
+    // --- Proof Attachments state ---
+    const [privateMode, setPrivateMode] = useState<boolean>(() => {
+        try { return localStorage.getItem('haloai_private_mode') === 'true'; } catch { return false; }
+    });
+    const [proofState, setProofState] = useState<ProofState>({ status: 'idle' });
+
+    const togglePrivateMode = useCallback(() => {
+        setPrivateMode(prev => {
+            const next = !prev;
+            try { localStorage.setItem('haloai_private_mode', String(next)); } catch {}
+            return next;
+        });
+    }, []);
+
+    const attachProofToTrade = useCallback(async (
+        strategy: string,
+        tradeParamsObj: { action: string; asset: string; amount: string; destAsset?: string; destAmount?: string },
+        commitId: number,
+        txHash: string,
+    ) => {
+        if (!userId) return;
+        setProofState({ status: 'loading' });
+        try {
+            const tradeParamsStr = encodeTradeParams(tradeParamsObj);
+            const bundle = await generateProof(strategy, tradeParamsStr);
+
+            const result = await attachProof(userId, bundle.proofHashHex, commitId, txHash);
+            if (!mountedRef.current) return;
+
+            if (result.proofId !== null && result.proofId !== undefined) {
+                saveProofBundle(result.proofId, bundle);
+            }
+
+            setProofState({
+                status: 'success',
+                proofId: result.proofId,
+                proofHashHex: bundle.proofHashHex,
+            });
+        } catch (err: any) {
+            if (!mountedRef.current) return;
+            setProofState({ status: 'error', error: err.message || 'Failed to attach proof' });
+        }
+    }, [userId]);
+
+    const revealTradeProof = useCallback(async (proofId: number) => {
+        if (!userId) return;
+        setProofState({ status: 'loading' });
+        try {
+            const bundle = loadProofBundle(proofId);
+            if (!bundle) throw new Error('Proof bundle not found locally. Cannot reveal without the original strategy, trade params, and salt.');
+
+            await revealProofApi(userId, proofId, bundle.strategy, bundle.tradeParams, bundle.saltHex);
+            if (!mountedRef.current) return;
+            setProofState({ status: 'success', proofId });
+        } catch (err: any) {
+            if (!mountedRef.current) return;
+            setProofState({ status: 'error', error: err.message || 'Failed to reveal proof' });
+        }
+    }, [userId]);
+
+    const resetProofState = useCallback(() => {
+        setProofState({ status: 'idle' });
+    }, []);
+
     return {
         address,
         balance,
@@ -306,6 +442,7 @@ export function useWallet() {
         enableTrustline,
         fetchQuote,
         swap,
+        swapWithProof,
         resetTradeState,
         // Vault
         vaultBalance,
@@ -316,5 +453,12 @@ export function useWallet() {
         withdrawFromVault,
         lockInVault,
         resetVaultState,
+        // Proof Attachments
+        privateMode,
+        proofState,
+        togglePrivateMode,
+        attachProofToTrade,
+        revealTradeProof,
+        resetProofState,
     };
 }

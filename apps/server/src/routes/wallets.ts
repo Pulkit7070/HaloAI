@@ -58,6 +58,7 @@ const SOROBAN_RPC_URL = 'https://soroban-testnet.stellar.org';
 const sorobanServer = new StellarSdk.rpc.Server(SOROBAN_RPC_URL);
 const VAULT_CONTRACT_ID = 'CANZIG67XFUHEUQCRJ4ZF2BG2OPCJMWJWBQTO37MVULQFQMDTKAOACQO';
 const XLM_SAC_ID = 'CDLZFC3SYJYDZT7K67VZ75HPJVIEUVNIXF47ZG2FB2RMQQVU2HHGCYSC';
+const STRATEGY_CONTRACT_ID = 'CBNYO7UL3A3254A752CNMFIFJRXH6HLIAGPM6YLSFHU27LAU4JTBY4WO';
 
 // POST /api/wallets — create or return existing wallet
 router.post('/', async (req: Request, res: Response) => {
@@ -439,11 +440,12 @@ function nativeU64(val: number): StellarSdk.xdr.ScVal {
 async function buildAndSubmitSoroban(
     publicKey: string,
     secretKey: string,
+    contractId: string,
     method: string,
     args: StellarSdk.xdr.ScVal[],
 ): Promise<StellarSdk.rpc.Api.GetTransactionResponse> {
     const sourceAccount = await sorobanServer.getAccount(publicKey);
-    const contract = new StellarSdk.Contract(VAULT_CONTRACT_ID);
+    const contract = new StellarSdk.Contract(contractId);
 
     const tx = new StellarSdk.TransactionBuilder(sourceAccount, {
         fee: '300000',
@@ -487,7 +489,7 @@ async function buildAndSubmitSoroban(
             throw new Error('Restore transaction failed');
         }
         // Retry the original call after restore
-        return buildAndSubmitSoroban(publicKey, secretKey, method, args);
+        return buildAndSubmitSoroban(publicKey, secretKey, contractId, method, args);
     }
 
     // Check for contract errors in simulation events before assembling
@@ -545,11 +547,12 @@ async function buildAndSubmitSoroban(
 
 async function simulateReadOnly(
     publicKey: string,
+    contractId: string,
     method: string,
     args: StellarSdk.xdr.ScVal[],
 ): Promise<StellarSdk.xdr.ScVal | null> {
     const sourceAccount = await sorobanServer.getAccount(publicKey);
-    const contract = new StellarSdk.Contract(VAULT_CONTRACT_ID);
+    const contract = new StellarSdk.Contract(contractId);
 
     const tx = new StellarSdk.TransactionBuilder(sourceAccount, {
         fee: '100',
@@ -587,7 +590,7 @@ router.get('/:userId/vault/balance', async (req: Request, res: Response) => {
         const wallet = await getWalletRecord(req.params.userId);
         if (!wallet) return res.status(404).json({ error: 'Wallet not found' });
 
-        const retval = await simulateReadOnly(wallet.public_key, 'balance', [
+        const retval = await simulateReadOnly(wallet.public_key, VAULT_CONTRACT_ID, 'balance', [
             addressScVal(wallet.public_key),
             addressScVal(XLM_SAC_ID),
         ]);
@@ -614,7 +617,7 @@ router.post('/:userId/vault/deposit', async (req: Request, res: Response) => {
         const secretKey = decrypt(wallet.encrypted_secret);
         const stroops = BigInt(Math.round(Number(amount) * 1e7));
 
-        await buildAndSubmitSoroban(wallet.public_key, secretKey, 'deposit', [
+        await buildAndSubmitSoroban(wallet.public_key, secretKey, VAULT_CONTRACT_ID, 'deposit', [
             addressScVal(wallet.public_key),
             addressScVal(XLM_SAC_ID),
             nativeI128(stroops),
@@ -641,7 +644,7 @@ router.post('/:userId/vault/withdraw', async (req: Request, res: Response) => {
         const secretKey = decrypt(wallet.encrypted_secret);
         const stroops = BigInt(Math.round(Number(amount) * 1e7));
 
-        await buildAndSubmitSoroban(wallet.public_key, secretKey, 'withdraw', [
+        await buildAndSubmitSoroban(wallet.public_key, secretKey, VAULT_CONTRACT_ID, 'withdraw', [
             addressScVal(wallet.public_key),
             addressScVal(XLM_SAC_ID),
             nativeI128(stroops),
@@ -668,7 +671,7 @@ router.post('/:userId/vault/lock', async (req: Request, res: Response) => {
         const secretKey = decrypt(wallet.encrypted_secret);
         const stroops = BigInt(Math.round(Number(amount) * 1e7));
 
-        const result = await buildAndSubmitSoroban(wallet.public_key, secretKey, 'lock', [
+        const result = await buildAndSubmitSoroban(wallet.public_key, secretKey, VAULT_CONTRACT_ID, 'lock', [
             addressScVal(wallet.public_key),
             addressScVal(XLM_SAC_ID),
             nativeI128(stroops),
@@ -692,7 +695,7 @@ router.get('/:userId/vault/lock/:lockId', async (req: Request, res: Response) =>
         const wallet = await getWalletRecord(req.params.userId);
         if (!wallet) return res.status(404).json({ error: 'Wallet not found' });
 
-        const retval = await simulateReadOnly(wallet.public_key, 'get_lock', [
+        const retval = await simulateReadOnly(wallet.public_key, VAULT_CONTRACT_ID, 'get_lock', [
             addressScVal(wallet.public_key),
             nativeU64(Number(req.params.lockId)),
         ]);
@@ -722,7 +725,7 @@ router.post('/:userId/vault/release', async (req: Request, res: Response) => {
         if (!wallet) return res.status(404).json({ error: 'Wallet not found' });
 
         const secretKey = decrypt(wallet.encrypted_secret);
-        await buildAndSubmitSoroban(wallet.public_key, secretKey, 'release', [
+        await buildAndSubmitSoroban(wallet.public_key, secretKey, VAULT_CONTRACT_ID, 'release', [
             addressScVal(wallet.public_key),
             nativeU64(Number(lockId)),
             addressScVal(recipient),
@@ -746,7 +749,7 @@ router.post('/:userId/vault/reclaim', async (req: Request, res: Response) => {
         if (!wallet) return res.status(404).json({ error: 'Wallet not found' });
 
         const secretKey = decrypt(wallet.encrypted_secret);
-        await buildAndSubmitSoroban(wallet.public_key, secretKey, 'reclaim', [
+        await buildAndSubmitSoroban(wallet.public_key, secretKey, VAULT_CONTRACT_ID, 'reclaim', [
             addressScVal(wallet.public_key),
             nativeU64(Number(lockId)),
         ]);
@@ -755,6 +758,151 @@ router.post('/:userId/vault/reclaim', async (req: Request, res: Response) => {
     } catch (err: any) {
         console.error('[Vault] Reclaim error:', err.message);
         return res.status(500).json({ error: err.message || 'Failed to reclaim lock' });
+    }
+});
+
+// ─── Strategy Commitment endpoints ───────────────────────────────────────────
+
+// POST /api/wallets/:userId/commit — commit strategy hash on-chain
+router.post('/:userId/commit', async (req: Request, res: Response) => {
+    try {
+        const { commitmentHex } = req.body;
+        if (!commitmentHex) {
+            return res.status(400).json({ error: 'commitmentHex is required' });
+        }
+        const wallet = await getWalletRecord(req.params.userId);
+        if (!wallet) return res.status(404).json({ error: 'Wallet not found' });
+
+        const secretKey = decrypt(wallet.encrypted_secret);
+
+        const result = await buildAndSubmitSoroban(
+            wallet.public_key,
+            secretKey,
+            STRATEGY_CONTRACT_ID,
+            'commit',
+            [
+                addressScVal(wallet.public_key),
+                bytes32ScVal(commitmentHex),
+            ],
+        );
+
+        let commitId: number | null = null;
+        if (result.status === 'SUCCESS' && result.returnValue) {
+            commitId = Number(StellarSdk.scValToNative(result.returnValue));
+        }
+        return res.json({ commitId });
+    } catch (err: any) {
+        console.error('[Strategy] Commit error:', err.message);
+        return res.status(500).json({ error: err.message || 'Failed to commit strategy' });
+    }
+});
+
+// ─── Proof Attachment endpoints ──────────────────────────────────────────────
+
+function bytesScVal(hex: string): StellarSdk.xdr.ScVal {
+    return StellarSdk.xdr.ScVal.scvBytes(Buffer.from(hex, 'hex'));
+}
+
+function bytes32ScVal(hex: string): StellarSdk.xdr.ScVal {
+    return StellarSdk.nativeToScVal(Buffer.from(hex, 'hex'), { type: 'bytes' });
+}
+
+// POST /api/wallets/:userId/proofs/attach
+router.post('/:userId/proofs/attach', async (req: Request, res: Response) => {
+    try {
+        const { proofHashHex, commitId, txHash } = req.body;
+        if (!proofHashHex || commitId === undefined || !txHash) {
+            return res.status(400).json({ error: 'proofHashHex, commitId, and txHash are required' });
+        }
+        const wallet = await getWalletRecord(req.params.userId);
+        if (!wallet) return res.status(404).json({ error: 'Wallet not found' });
+
+        const secretKey = decrypt(wallet.encrypted_secret);
+
+        const result = await buildAndSubmitSoroban(
+            wallet.public_key,
+            secretKey,
+            STRATEGY_CONTRACT_ID,
+            'attach_proof',
+            [
+                addressScVal(wallet.public_key),
+                bytes32ScVal(proofHashHex),
+                nativeU64(Number(commitId)),
+                bytesScVal(Buffer.from(txHash).toString('hex')),
+            ],
+        );
+
+        let proofId: number | null = null;
+        if (result.status === 'SUCCESS' && result.returnValue) {
+            proofId = Number(StellarSdk.scValToNative(result.returnValue));
+        }
+        return res.json({ proofId });
+    } catch (err: any) {
+        console.error('[Proof] Attach error:', err.message);
+        return res.status(500).json({ error: err.message || 'Failed to attach proof' });
+    }
+});
+
+// GET /api/wallets/:userId/proofs/:proofId
+router.get('/:userId/proofs/:proofId', async (req: Request, res: Response) => {
+    try {
+        const wallet = await getWalletRecord(req.params.userId);
+        if (!wallet) return res.status(404).json({ error: 'Wallet not found' });
+
+        const retval = await simulateReadOnly(
+            wallet.public_key,
+            STRATEGY_CONTRACT_ID,
+            'get_proof',
+            [nativeU64(Number(req.params.proofId))],
+        );
+        if (!retval) return res.status(404).json({ error: 'Proof not found' });
+
+        const raw = StellarSdk.scValToNative(retval);
+        return res.json({
+            owner: raw.owner,
+            proofHash: raw.proof_hash ? Buffer.from(raw.proof_hash).toString('hex') : '',
+            commitId: Number(raw.commit_id),
+            txHash: raw.tx_hash ? Buffer.from(raw.tx_hash).toString('utf8') : '',
+            revealed: raw.revealed,
+            strategy: raw.strategy ? Buffer.from(raw.strategy).toString('utf8') : '',
+            tradeParams: raw.trade_params ? Buffer.from(raw.trade_params).toString('utf8') : '',
+            timestamp: Number(raw.timestamp),
+        });
+    } catch (err: any) {
+        console.error('[Proof] Get error:', err.message);
+        return res.status(500).json({ error: 'Failed to fetch proof' });
+    }
+});
+
+// POST /api/wallets/:userId/proofs/:proofId/reveal
+router.post('/:userId/proofs/:proofId/reveal', async (req: Request, res: Response) => {
+    try {
+        const { strategy, tradeParams, salt } = req.body;
+        if (!strategy || !tradeParams || !salt) {
+            return res.status(400).json({ error: 'strategy, tradeParams, and salt are required' });
+        }
+        const wallet = await getWalletRecord(req.params.userId);
+        if (!wallet) return res.status(404).json({ error: 'Wallet not found' });
+
+        const secretKey = decrypt(wallet.encrypted_secret);
+
+        await buildAndSubmitSoroban(
+            wallet.public_key,
+            secretKey,
+            STRATEGY_CONTRACT_ID,
+            'reveal_proof',
+            [
+                nativeU64(Number(req.params.proofId)),
+                bytesScVal(Buffer.from(strategy).toString('hex')),
+                bytesScVal(Buffer.from(tradeParams).toString('hex')),
+                bytesScVal(Buffer.from(salt, 'hex').toString('hex')),
+            ],
+        );
+
+        return res.json({ success: true });
+    } catch (err: any) {
+        console.error('[Proof] Reveal error:', err.message);
+        return res.status(500).json({ error: err.message || 'Failed to reveal proof' });
     }
 });
 

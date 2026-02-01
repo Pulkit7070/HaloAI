@@ -1,14 +1,12 @@
 # HaloAI
 
 <div align="center">
-  <a href="LINK_TO_YOUR_DEMO_VIDEO">
-    <img src="YOUR_DEMO_THUMBNAIL_IMAGE_URL" alt="Watch HaloAI Demo" />
-  </a>
   <h1>The AI-Powered Stellar Assistant That Lives With You</h1>
   <p>
     <b>Powered by Stellar Blockchain</b>
   </p>
   <p>
+    <a href="https://x.com/Maaztwts/status/2017852206947660037?s=20">🎥 Watch Demo</a> ·
     <a href="https://github.com/Pulkit7070/HaloAI/issues">Report Bug</a> ·
     <a href="https://github.com/Pulkit7070/HaloAI/issues">Request Feature</a> ·
     <a href="https://doc.haloai.kaizenn.xyz/">Documentation</a>
@@ -41,14 +39,13 @@ What if your AI assistant could not only understand your code but also manage yo
 </div>
 
 <div align="center">
-  <img src="YOUR_CODING_USECASE_IMAGE_URL" alt="HaloAI Demo - Coding & Debugging" />
-  <p><strong>Use case: Coding & Stellar Development</strong><br>Instantly debug Stellar SDK errors, analyze transaction failures, generate smart contract code, or get guidance on Horizon API calls — right from your terminal or IDE.</p>
+  <img src="apps/web/public/images/banner3.png" alt="HaloAI Demo - DEX Trading" />
+  <p><strong>Use case: Instant DEX Trading</strong><br>Swap XLM to USDC without leaving VS Code — HaloAI's wallet overlay brings Stellar DEX trading directly into your workflow.</p>
 </div>
 
-
 <div align="center">
-  <img src="YOUR_WRITING_USECASE_IMAGE_URL" alt="HaloAI Demo - Content Creation" />
-  <p><strong>Use case: Writing & Email Drafting</strong><br>Read email threads on screen and draft thoughtful replies in your tone, summarize meeting notes, or turn bullet points into structured documents — with full context awareness.</p>
+  <img src="apps/web/public/images/banner4.png" alt="HaloAI Demo - Safety Detection" />
+  <p><strong>Use case: AI-Powered Safety Detection</strong><br>HaloAI automatically detects phishing attempts and scam messages on your screen, warning you before you interact — keeping you safe while browsing social media or managing DMs.</p>
 </div>
 
 ## The Cerebras & Cline Experience

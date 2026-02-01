@@ -10,6 +10,10 @@ use soroban_sdk::{
 pub enum DataKey {
     NextId,
     Commitment(u64),
+    // Proof attachments
+    NextProofId,
+    Proof(u64),
+    ProofByCommit(u64),
 }
 
 // ─── Stored commitment record ────────────────────────────────────────────────
@@ -24,6 +28,21 @@ pub struct CommitmentRecord {
     pub timestamp: u64,
 }
 
+// ─── Proof attachment record ─────────────────────────────────────────────────
+
+#[contracttype]
+#[derive(Clone, Debug)]
+pub struct ProofRecord {
+    pub owner: Address,
+    pub proof_hash: BytesN<32>,
+    pub commit_id: u64,
+    pub tx_hash: Bytes,
+    pub revealed: bool,
+    pub strategy: Bytes,
+    pub trade_params: Bytes,
+    pub timestamp: u64,
+}
+
 // ─── Errors ──────────────────────────────────────────────────────────────────
 
 #[contracttype]
@@ -34,6 +53,10 @@ pub enum Error {
     AlreadyRevealed = 2,
     NotOwner = 3,
     HashMismatch = 4,
+    CommitNotFound = 5,
+    ProofNotFound = 6,
+    ProofAlreadyRevealed = 7,
+    ProofHashMismatch = 8,
 }
 
 // ─── Contract ────────────────────────────────────────────────────────────────
@@ -126,6 +149,122 @@ impl StrategyCommitment {
         env.events()
             .publish((symbol_short!("reveal"),), (commit_id, record.owner));
     }
+
+    // ─── Proof Attachments ──────────────────────────────────────────────
+
+    /// Attach a proof hash on-chain, linked to an existing commitment and a trade tx.
+    ///
+    /// `proof_hash` = SHA-256(strategy || trade_params || salt), computed off-chain.
+    /// Returns the proof_id.
+    pub fn attach_proof(
+        env: Env,
+        owner: Address,
+        proof_hash: BytesN<32>,
+        commit_id: u64,
+        tx_hash: Bytes,
+    ) -> u64 {
+        owner.require_auth();
+
+        // Validate the commitment exists and belongs to the caller
+        let commit: CommitmentRecord = env
+            .storage()
+            .persistent()
+            .get(&DataKey::Commitment(commit_id))
+            .unwrap_or_else(|| panic!("commitment not found"));
+
+        if commit.owner != owner {
+            panic!("not owner");
+        }
+
+        // Auto-increment proof ID
+        let proof_id: u64 = env
+            .storage()
+            .instance()
+            .get(&DataKey::NextProofId)
+            .unwrap_or(0);
+
+        let record = ProofRecord {
+            owner: owner.clone(),
+            proof_hash,
+            commit_id,
+            tx_hash,
+            revealed: false,
+            strategy: Bytes::new(&env),
+            trade_params: Bytes::new(&env),
+            timestamp: env.ledger().timestamp(),
+        };
+
+        env.storage()
+            .persistent()
+            .set(&DataKey::Proof(proof_id), &record);
+
+        env.storage()
+            .persistent()
+            .set(&DataKey::ProofByCommit(commit_id), &proof_id);
+
+        env.storage()
+            .instance()
+            .set(&DataKey::NextProofId, &(proof_id + 1));
+
+        env.events()
+            .publish((symbol_short!("proof"),), (proof_id, owner, commit_id));
+
+        proof_id
+    }
+
+    /// Read a proof record by ID.
+    pub fn get_proof(env: Env, proof_id: u64) -> ProofRecord {
+        env.storage()
+            .persistent()
+            .get(&DataKey::Proof(proof_id))
+            .unwrap_or_else(|| panic!("proof not found"))
+    }
+
+    /// Reveal a proof: prove that hash(strategy || trade_params || salt) == proof_hash.
+    ///
+    /// On success, stores plaintext strategy and trade_params, marks revealed.
+    pub fn reveal_proof(
+        env: Env,
+        proof_id: u64,
+        strategy: Bytes,
+        trade_params: Bytes,
+        salt: Bytes,
+    ) {
+        let mut record: ProofRecord = env
+            .storage()
+            .persistent()
+            .get(&DataKey::Proof(proof_id))
+            .unwrap_or_else(|| panic!("proof not found"));
+
+        record.owner.require_auth();
+
+        if record.revealed {
+            panic!("already revealed");
+        }
+
+        // Reconstruct: hash(strategy || trade_params || salt)
+        let mut preimage = Bytes::new(&env);
+        preimage.append(&strategy);
+        preimage.append(&trade_params);
+        preimage.append(&salt);
+
+        let computed: BytesN<32> = env.crypto().sha256(&preimage).into();
+
+        if computed != record.proof_hash {
+            panic!("proof hash mismatch");
+        }
+
+        record.revealed = true;
+        record.strategy = strategy;
+        record.trade_params = trade_params;
+
+        env.storage()
+            .persistent()
+            .set(&DataKey::Proof(proof_id), &record);
+
+        env.events()
+            .publish((symbol_short!("p_reveal"),), (proof_id, record.owner));
+    }
 }
 
 // ─── Tests ───────────────────────────────────────────────────────────────────
@@ -196,6 +335,115 @@ mod test {
         // Try reveal with wrong salt
         let bad_salt = Bytes::from_slice(&env, b"wrong_salt");
         client.reveal(&id, &strategy, &bad_salt);
+    }
+
+    #[test]
+    fn test_attach_and_get_proof() {
+        let env = Env::default();
+        env.mock_all_auths();
+
+        let contract_id = env.register_contract(None, StrategyCommitment);
+        let client = StrategyCommitmentClient::new(&env, &contract_id);
+
+        let owner = Address::generate(&env);
+
+        // First create a commitment
+        let strategy = Bytes::from_slice(&env, b"buy XLM when RSI < 30");
+        let salt = Bytes::from_slice(&env, b"random_salt_1234");
+        let mut preimage = Bytes::new(&env);
+        preimage.append(&strategy);
+        preimage.append(&salt);
+        let commitment: BytesN<32> = env.crypto().sha256(&preimage).into();
+        let commit_id = client.commit(&owner, &commitment);
+
+        // Build proof hash: sha256(strategy || trade_params || proof_salt)
+        let trade_params = Bytes::from_slice(&env, b"buy:XLM:100");
+        let proof_salt = Bytes::from_slice(&env, b"proof_salt_5678");
+        let mut proof_preimage = Bytes::new(&env);
+        proof_preimage.append(&strategy);
+        proof_preimage.append(&trade_params);
+        proof_preimage.append(&proof_salt);
+        let proof_hash: BytesN<32> = env.crypto().sha256(&proof_preimage).into();
+
+        let tx_hash = Bytes::from_slice(&env, b"abc123txhash");
+
+        // Attach proof
+        let proof_id = client.attach_proof(&owner, &proof_hash, &commit_id, &tx_hash);
+        assert_eq!(proof_id, 0);
+
+        // Get proof
+        let record = client.get_proof(&proof_id);
+        assert_eq!(record.owner, owner);
+        assert_eq!(record.proof_hash, proof_hash);
+        assert_eq!(record.commit_id, commit_id);
+        assert!(!record.revealed);
+    }
+
+    #[test]
+    fn test_reveal_proof() {
+        let env = Env::default();
+        env.mock_all_auths();
+
+        let contract_id = env.register_contract(None, StrategyCommitment);
+        let client = StrategyCommitmentClient::new(&env, &contract_id);
+
+        let owner = Address::generate(&env);
+
+        // Create commitment
+        let commitment: BytesN<32> = BytesN::from_array(&env, &[1u8; 32]);
+        let commit_id = client.commit(&owner, &commitment);
+
+        // Build proof
+        let strategy = Bytes::from_slice(&env, b"buy XLM when RSI < 30");
+        let trade_params = Bytes::from_slice(&env, b"buy:XLM:100");
+        let proof_salt = Bytes::from_slice(&env, b"proof_salt_5678");
+        let mut proof_preimage = Bytes::new(&env);
+        proof_preimage.append(&strategy);
+        proof_preimage.append(&trade_params);
+        proof_preimage.append(&proof_salt);
+        let proof_hash: BytesN<32> = env.crypto().sha256(&proof_preimage).into();
+
+        let tx_hash = Bytes::from_slice(&env, b"abc123txhash");
+        let proof_id = client.attach_proof(&owner, &proof_hash, &commit_id, &tx_hash);
+
+        // Reveal
+        client.reveal_proof(&proof_id, &strategy, &trade_params, &proof_salt);
+
+        let record = client.get_proof(&proof_id);
+        assert!(record.revealed);
+        assert_eq!(record.strategy, strategy);
+        assert_eq!(record.trade_params, trade_params);
+    }
+
+    #[test]
+    #[should_panic(expected = "proof hash mismatch")]
+    fn test_bad_reveal_proof() {
+        let env = Env::default();
+        env.mock_all_auths();
+
+        let contract_id = env.register_contract(None, StrategyCommitment);
+        let client = StrategyCommitmentClient::new(&env, &contract_id);
+
+        let owner = Address::generate(&env);
+
+        let commitment: BytesN<32> = BytesN::from_array(&env, &[1u8; 32]);
+        let commit_id = client.commit(&owner, &commitment);
+
+        let strategy = Bytes::from_slice(&env, b"buy XLM when RSI < 30");
+        let trade_params = Bytes::from_slice(&env, b"buy:XLM:100");
+        let proof_salt = Bytes::from_slice(&env, b"proof_salt_5678");
+        let mut proof_preimage = Bytes::new(&env);
+        proof_preimage.append(&strategy);
+        proof_preimage.append(&trade_params);
+        proof_preimage.append(&proof_salt);
+        let proof_hash: BytesN<32> = env.crypto().sha256(&proof_preimage).into();
+
+        let tx_hash = Bytes::from_slice(&env, b"abc123txhash");
+        let proof_id = client.attach_proof(&owner, &proof_hash, &commit_id, &tx_hash);
+
+        // Reveal with wrong salt
+        let bad_salt = Bytes::from_slice(&env, b"wrong_salt");
+        client.reveal_proof(&proof_id, &strategy, &trade_params, &bad_salt);
     }
 
     #[test]

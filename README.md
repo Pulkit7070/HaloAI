@@ -48,30 +48,6 @@ What if your AI assistant could not only understand your code but also manage yo
   <p><strong>Use case: AI-Powered Safety Detection</strong><br>HaloAI automatically detects phishing attempts and scam messages on your screen, warning you before you interact — keeping you safe while browsing social media or managing DMs.</p>
 </div>
 
-## The Cerebras & Cline Experience
-
-This project came to life through the power of cutting-edge AI infrastructure and rapid development tools. Here's what made it possible:
-
-### Cerebras GLM-4.7: "It feels instant"
-
-The biggest bottleneck for desktop assistants is latency. Waiting 5–10 seconds for an AI response destroys the magical "assistant" feeling.
-
-- **What worked**: We integrated Cerebras GLM-4.7 via their Z.ai endpoint and were blown away. Token generation is so fast that responses stream in before you finish reading your question.
-- **The Magic**: We streamed responses directly to our React components with real-time markdown rendering. Because Cerebras is so fast, the UI feels like it's thinking *with* you, not *for* you.
-- **Real-world impact**: 
-  - Code debugging suggestions appear in under 500ms
-  - Stellar transaction JSON generation is nearly instantaneous
-  - Voice-to-text to AI response feels like a single fluid motion
-
-### Cline: "Vibe Coding at Its Best"
-
-We practiced "Vibe Coding" — focusing on high-level architecture and user experience while Cline handled implementation details.
-
-- **Rapid Prototyping**: Cline scaffolded our entire Electron + React + Vite monorepo in minutes. Setting up TurboRepo, configuring TypeScript, and wiring up hot reload would have taken hours manually.
-- **Refactoring Power**: When we pivoted from a sidebar wallet UI to a glassmorphic floating panel design, Cline refactored Tailwind classes across 20+ components instantly.
-- **Stellar Integration**: Cline helped us implement complex Stellar SDK operations — from keypair generation to transaction signing to trustline management — by referencing official docs and generating type-safe code.
-- **Learning**: Providing Cline with clear context (current file structure, design system, API schemas) helped it make smarter architectural decisions.
-
 ## Challenges Faced
 
 Building a production-ready desktop app with blockchain integration in record time came with hurdles:
